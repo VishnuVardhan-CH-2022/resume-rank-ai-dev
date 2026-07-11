@@ -2,14 +2,19 @@
 
 Professional software documentation for **ResumeRank AI**, an AI-powered Resume Screening and Candidate Ranking System (MBA Final Year Project — Artificial Intelligence & Data Science).
 
+## Governing Plan
+
+**[Documentation Roadmap (RR-DOC-000)](./00-Documentation-Roadmap.md)** — lists every document, purpose, page estimates, dependencies, creation timing, and development usage. Documents are authored **one at a time**.
+
 ## Documentation Standards
 
-Every document includes: Cover Page, Version History, Table of Contents, structured headings, tables, Mermaid diagrams (where applicable), References, Future Scope, and revision control metadata.
+Every project document includes: Cover Page, Version History, Table of Contents, structured headings, tables, Mermaid diagrams (where applicable), References, Future Scope, and revision control metadata.
 
-## Roadmap
+## Roadmap Status
 
 | Phase | # | Document | ID | Status | Path |
 | --- | --- | --- | --- | --- | --- |
+| 0 | 0 | Documentation Roadmap | RR-DOC-000 | Complete | [00-Documentation-Roadmap.md](./00-Documentation-Roadmap.md) |
 | 1 | 1 | Project Architecture | RR-ARCH-001 | Complete | [01-Project-Architecture.md](./01-requirements/01-Project-Architecture.md) |
 | 1 | 2 | Product Requirements Document | RR-PRD-002 | Pending | — |
 | 1 | 3 | Software Requirements Specification | RR-SRS-003 | Pending | — |
@@ -24,12 +29,6 @@ Every document includes: Cover Page, Version History, Table of Contents, structu
 | 4 | 12 | Cursor Developer Guide | RR-DEV-012 | Pending | — |
 | 5 | 13 | Final MBA Report | RR-MBA-013 | Pending | — |
 
-## Working Rule
+## Next Document
 
-Documents are produced **one at a time**. Each document must be complete and must reference prior approved documents before the next document begins.
-
-## Current Baseline
-
-**Active baseline:** [Project Architecture Document (RR-ARCH-001)](./01-requirements/01-Project-Architecture.md)
-
-**Next document:** Product Requirements Document (RR-PRD-002)
+**Product Requirements Document (RR-PRD-002)** — only after this roadmap is accepted.
