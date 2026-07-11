@@ -30,10 +30,12 @@ ResumeRank AI enables HR personnel to:
 
 Professional documentation is maintained under [`docs/`](./docs/README.md).
 
-**Current document:** [Project Architecture (RR-ARCH-001)](./docs/01-requirements/01-Project-Architecture.md)
+**Governing plan:** [Documentation Roadmap (RR-DOC-000)](./docs/00-Documentation-Roadmap.md)
 
-Documents are authored sequentially. Do not skip ahead in the roadmap.
+**Completed:** [Project Architecture (RR-ARCH-001)](./docs/01-requirements/01-Project-Architecture.md)
+
+Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 1 — Requirements Documentation in progress.
+Phase 0 roadmap complete. Phase 1 — next: Product Requirements Document (RR-PRD-002).
