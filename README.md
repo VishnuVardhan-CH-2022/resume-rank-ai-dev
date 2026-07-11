@@ -35,9 +35,10 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 **Completed:**
 - [Project Architecture (RR-ARCH-001)](./docs/01-requirements/01-Project-Architecture.md)
 - [Product Requirements Document (RR-PRD-002)](./docs/01-requirements/02-Product-Requirements-Document.md)
+- [Software Requirements Specification (RR-SRS-003)](./docs/01-requirements/03-Software-Requirements-Specification.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 1 in progress — next: Software Requirements Specification (RR-SRS-003).
+Phase 1 complete. Phase 2 next: System Design Document (RR-SDD-004).
