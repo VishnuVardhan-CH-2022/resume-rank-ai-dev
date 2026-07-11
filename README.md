@@ -32,10 +32,12 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 
 **Governing plan:** [Documentation Roadmap (RR-DOC-000)](./docs/00-Documentation-Roadmap.md)
 
-**Completed:** [Project Architecture (RR-ARCH-001)](./docs/01-requirements/01-Project-Architecture.md)
+**Completed:**
+- [Project Architecture (RR-ARCH-001)](./docs/01-requirements/01-Project-Architecture.md)
+- [Product Requirements Document (RR-PRD-002)](./docs/01-requirements/02-Product-Requirements-Document.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 0 roadmap complete. Phase 1 — next: Product Requirements Document (RR-PRD-002).
+Phase 1 in progress — next: Software Requirements Specification (RR-SRS-003).

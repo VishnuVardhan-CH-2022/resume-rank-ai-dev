@@ -16,7 +16,7 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | --- | --- | --- | --- | --- | --- |
 | 0 | 0 | Documentation Roadmap | RR-DOC-000 | Complete | [00-Documentation-Roadmap.md](./00-Documentation-Roadmap.md) |
 | 1 | 1 | Project Architecture | RR-ARCH-001 | Complete (v2.0.0) | [01-Project-Architecture.md](./01-requirements/01-Project-Architecture.md) |
-| 1 | 2 | Product Requirements Document | RR-PRD-002 | Pending | — |
+| 1 | 2 | Product Requirements Document | RR-PRD-002 | Complete (v1.0.0) | [02-Product-Requirements-Document.md](./01-requirements/02-Product-Requirements-Document.md) |
 | 1 | 3 | Software Requirements Specification | RR-SRS-003 | Pending | — |
 | 2 | 4 | System Design Document | RR-SDD-004 | Pending | — |
 | 2 | 5 | Database Design Document | RR-DB-005 | Pending | — |
