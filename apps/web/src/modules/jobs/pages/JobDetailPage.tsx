@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorBanner } from "@/components/domain/ErrorBanner";
+import { ProgressSummary } from "@/components/domain/ProgressSummary";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/modules/jobs/components/ConfirmDialog";
 import { JobLifecycleBadge } from "@/modules/jobs/components/JobLifecycleBadge";
@@ -14,8 +15,12 @@ import {
 } from "@/modules/jobs/hooks/useJobs";
 import { parseJobDetailTab, type JobDetailTab } from "@/modules/jobs/types";
 import { UploadTabPanel } from "@/modules/uploads/components/UploadTabPanel";
+import { ProgressTabPanel } from "@/modules/ranking/components/ProgressTabPanel";
+import { CandidatesTabPanel } from "@/modules/ranking/components/CandidatesTabPanel";
+import { useJobProgress } from "@/modules/ranking/hooks/useRanking";
 import { useScreenJob } from "@/modules/screening/hooks/useScreening";
 import { getSafeErrorMessage, type ErrorObject } from "@/lib/errors";
+import { EmptyState } from "@/components/domain/EmptyState";
 
 const TAB_ITEMS: { id: JobDetailTab; label: string; query: string | null }[] = [
   { id: "overview", label: "Overview", query: null },
@@ -34,6 +39,7 @@ export function JobDetailPage() {
   const jobQuery = useJob(jobId);
   const candidateCount = useCandidateCount(jobId);
   const eligibleCount = useScreenEligibleCount(jobId);
+  const progressQuery = useJobProgress(jobId, tab === "overview");
   const archiveMutation = useArchiveJob();
   const deleteMutation = useDeleteJob();
   const screenMutation = useScreenJob(jobId ?? "");
@@ -43,6 +49,7 @@ export function JobDetailPage() {
   const [blockedDelete, setBlockedDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [screenAccepted, setScreenAccepted] = useState<number | null>(null);
+  const [pollToken, setPollToken] = useState(0);
 
   const job = jobQuery.data;
   const archived = job?.lifecycle_status === "archived";
@@ -75,6 +82,7 @@ export function JobDetailPage() {
     try {
       const data = await screenMutation.mutateAsync(undefined);
       setScreenAccepted(data.accepted_candidate_ids.length);
+      setPollToken((n) => n + 1);
       setSearchParams({ tab: "progress" }, { replace: true });
     } catch (err) {
       setActionError(getSafeErrorMessage(err as ErrorObject));
@@ -135,9 +143,9 @@ export function JobDetailPage() {
       {actionError ? <ErrorBanner error={actionError} /> : null}
       {screenAccepted != null ? (
         <p className="mb-4 text-sm text-muted-foreground" role="status">
-          Screening accepted for {screenAccepted} candidate
-          {screenAccepted === 1 ? "" : "s"}. Progress polling arrives in a later
-          phase; statuses will move to queued.
+          Processing accepted for {screenAccepted} candidate
+          {screenAccepted === 1 ? "" : "s"}. Statuses move to queued while the
+          worker runs.
         </p>
       ) : null}
 
@@ -230,13 +238,19 @@ export function JobDetailPage() {
 
           <div role="tabpanel">
             {tab === "overview" ? (
-              <section className="space-y-3">
-                <h2 className="text-sm font-medium text-muted-foreground">
-                  Job description
-                </h2>
-                <pre className="whitespace-pre-wrap rounded-md border border-border bg-card p-4 text-sm leading-relaxed">
-                  {job.jd_text}
-                </pre>
+              <section className="space-y-6">
+                {progressQuery.data &&
+                progressQuery.data.total_candidates > 0 ? (
+                  <ProgressSummary summary={progressQuery.data} />
+                ) : null}
+                <div className="space-y-3">
+                  <h2 className="text-sm font-medium text-muted-foreground">
+                    Job description
+                  </h2>
+                  <pre className="whitespace-pre-wrap rounded-md border border-border bg-card p-4 text-sm leading-relaxed">
+                    {job.jd_text}
+                  </pre>
+                </div>
               </section>
             ) : null}
 
@@ -245,21 +259,19 @@ export function JobDetailPage() {
             ) : null}
 
             {tab === "progress" ? (
-              <EmptyTab
-                title="Screening progress"
-                body="Candidates are queued after Start Screening. Live progress polling (PollingIndicator) lands with CP-23 after the AI worker."
-              />
+              <ProgressTabPanel jobId={job.id} pollToken={pollToken} />
             ) : null}
 
             {tab === "candidates" ? (
-              <EmptyTab
-                title="Candidates"
-                body="No ranking data yet. Upload resumes, then Start Screening."
+              <CandidatesTabPanel
+                jobId={job.id}
+                jobActive={!archived}
+                pollToken={pollToken}
               />
             ) : null}
 
             {tab === "analytics" ? (
-              <EmptyTab
+              <EmptyState
                 title="Job analytics"
                 body="Job-scoped analytics charts land in Phase 11."
               />
@@ -300,15 +312,6 @@ export function JobDetailPage() {
           setArchiveOpen(true);
         }}
       />
-    </div>
-  );
-}
-
-function EmptyTab({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-md border border-dashed border-border px-6 py-10">
-      <h2 className="text-base font-medium">{title}</h2>
-      <p className="mt-2 text-sm text-muted-foreground">{body}</p>
     </div>
   );
 }
