@@ -22,9 +22,9 @@ Expected:
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| `npm run lint` | ☐ Pending |  |
-| `npm run build` | ☐ Pending |  |
-| `npm test` | ☐ Pending |  |
+| `npm run lint` | ☑ Pass | 2026-07-12 local run; only existing fast-refresh warnings |
+| `npm run build` | ☑ Pass | 2026-07-12 local run; Vite chunk-size advisory only |
+| `npm test` | ☑ Pass | 2026-07-12 local run; all selftests + bundle scan passed |
 
 ---
 
@@ -32,10 +32,10 @@ Expected:
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| No Gemini/service-role usage in `apps/web` runtime code | ☐ Pending | `npm run test:bundle-secrets` |
-| ErrorObject remains safe (no stack/secret leaks) | ☐ Pending | `npm run test:errors` |
-| `audit_logs` payloads avoid raw resume text / PII dumps | ☐ Pending | Code review (`services/resume-processing/persist`) |
-| Cross-user denial scenarios documented (AUTHZ suite) | ☐ Pending | Section 4 checklist |
+| No Gemini/service-role usage in `apps/web` runtime code | ☑ Pass | `npm run test:bundle-secrets` |
+| ErrorObject remains safe (no stack/secret leaks) | ☑ Pass | `npm run test:errors` |
+| `audit_logs` payloads avoid raw resume text / PII dumps | ☑ Pass | Reviewed `services/resume-processing/persist/index.ts` payload fields |
+| Cross-user denial scenarios documented (AUTHZ suite) | ◑ In progress | Section 4 checklist contains `TC-AUTHZ-001..008` |
 
 ---
 
