@@ -17,8 +17,8 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | 0 | 0 | Documentation Roadmap | RR-DOC-000 | Complete | [00-Documentation-Roadmap.md](./00-Documentation-Roadmap.md) |
 | 1 | 1 | Project Architecture | RR-ARCH-001 | Complete (v2.0.0) | [01-Project-Architecture.md](./01-requirements/01-Project-Architecture.md) |
 | 1 | 2 | Product Requirements Document | RR-PRD-002 | Complete (v1.0.0) | [02-Product-Requirements-Document.md](./01-requirements/02-Product-Requirements-Document.md) |
-| 1 | 3 | Software Requirements Specification | RR-SRS-003 | Complete (v1.0.0) | [03-Software-Requirements-Specification.md](./01-requirements/03-Software-Requirements-Specification.md) |
-| 2 | 4 | System Design Document | RR-SDD-004 | Pending | — |
+| 1 | 3 | Software Requirements Specification | RR-SRS-003 | Complete (v1.1.0) | [03-Software-Requirements-Specification.md](./01-requirements/03-Software-Requirements-Specification.md) |
+| 2 | 4 | System Design Document | RR-SDD-004 | Complete (v1.0.0) | [04-System-Design-Document.md](./02-design/04-System-Design-Document.md) |
 | 2 | 5 | Database Design Document | RR-DB-005 | Pending | — |
 | 2 | 6 | API Design Specification | RR-API-006 | Pending | — |
 | 2 | 7 | UI/UX Design Document | RR-UIX-007 | Pending | — |
@@ -31,4 +31,4 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 
 ## Next Document
 
-**System Design Document (RR-SDD-004)** — start of Phase 2, after SRS acceptance.
+**Database Design Document (RR-DB-005)** — after SDD acceptance.
