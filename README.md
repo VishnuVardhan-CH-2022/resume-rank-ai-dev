@@ -55,6 +55,7 @@ Documentation suite complete (RR-DOC-000 through RR-MBA-013).
 
 **Implementation:**
 - Phase 1 — SPA scaffold under [`apps/web`](./apps/web)
-- Phase 2 — Supabase project layout under [`supabase/`](./supabase) + browser client (`lib/supabase.ts`)
+- Phase 2 — Supabase layout + browser client ([`supabase/`](./supabase))
+- Phase 3 — Database migrations, RLS, analytics views ([`supabase/migrations/`](./supabase/migrations))
 
-Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md). After creating a Supabase project, copy [`.env.example`](./.env.example) values into `apps/web/.env` (public `VITE_*` only) and run `npx supabase link --project-ref <ref>`.
+Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md). Apply schema with `npx supabase db push` after `supabase link`.
