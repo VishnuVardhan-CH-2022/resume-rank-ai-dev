@@ -72,7 +72,11 @@ With `.env` set, open `/login` — connection strip shows **configured** when pu
 
 ## Out of scope here
 
-- Schema / RLS / analytics views → Phase 3  
+- Schema / RLS / analytics views → Phase 3 (see [`migrations/README.md`](./migrations/README.md))  
 - Login/Signup screens + route guards → Phase 4  
 - `resumes` bucket → Phase 5  
 - Edge Functions + Gemini secrets → Phases 8–9  
+
+## Phase 3 status
+
+Migrations CP-06–CP-08 are in `migrations/`. Apply with `npx supabase db push` after linking (or `supabase db reset` locally with Docker).
