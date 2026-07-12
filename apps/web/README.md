@@ -23,6 +23,7 @@ Only `VITE_*` keys belong in the Vite client. Edge secrets stay in Supabase secr
 | `npm run lint` | Oxlint |
 | `npm run test:errors` | ErrorObject mapping self-check (CP-05) |
 | `npm run test:auth` | Auth validation self-check (CP-09) |
+| `npm run test:storage` | Storage path helper self-check (CP-14) |
 
 ## Layout
 

@@ -29,6 +29,7 @@ npx supabase db reset   # applies all migrations + seed
 | `20260712130500_rls_policies.sql` | Owner RLS; SPA cannot write evals / claim queue |
 | `20260712130600_analytics_views.sql` | Five analytics views (`security_invoker`) |
 | `20260712130700_grants.sql` | Role privileges |
+| `20260712140000_storage_resumes_bucket.sql` | Private `resumes` bucket + owner Storage RLS (Phase 5) |
 
 ## Authoritative candidate statuses
 
@@ -45,6 +46,7 @@ Do **not** use SRS coarse `pending` / `processing` as DB values.
 4. Second open `processing_queue` row for same candidate fails  
 5. User B cannot `SELECT` User A jobs  
 6. Views: `candidate_ranking`, `job_progress_summary`, `score_distribution`, `screening_statistics`, `dashboard_metrics`
+7. Storage: bucket `resumes` is **private**; anon list denied; object key `{owner}/{job}/{candidate}/{file}`
 
 ## Ranking client order
 

@@ -74,9 +74,19 @@ With `.env` set, open `/login` — connection strip shows **configured** when pu
 
 - Schema / RLS / analytics views → Phase 3 (see [`migrations/README.md`](./migrations/README.md))  
 - Login/Signup screens + route guards → Phase 4  
-- `resumes` bucket → Phase 5  
-- Edge Functions + Gemini secrets → Phases 8–9  
+- Upload UI / Edge signed URLs → Phases 7–8  
 
-## Phase 3 status
+## Phase 3–5 status
 
-Migrations CP-06–CP-08 are in `migrations/`. Apply with `npx supabase db push` after linking (or `supabase db reset` locally with Docker).
+- Migrations CP-06–CP-08 + Phase 5 Storage bucket are in `migrations/`.  
+- Apply with `npx supabase db push` after linking (or `supabase db reset` locally with Docker).  
+- SPA path helper: `apps/web/src/lib/storagePaths.ts` (`npm run test:storage`).
+
+### Storage path (frozen)
+
+| Layer | Value |
+| --- | --- |
+| Bucket | `resumes` (private) |
+| Object key | `{owner_id}/{job_id}/{candidate_id}/{uuid_filename}` |
+| Logical (DDD) | `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}` |
+| MIME / size | PDF/DOCX · ≤ 5 MB |
