@@ -91,17 +91,44 @@ Self-check (no Docker required):
 
 ```bash
 npx tsx supabase/functions/_shared/hashing.selftest.ts
+cd apps/web && npm run test:rps
 ```
 
-`process-queue` remains a Phase 9 stub.
+## Phase 9 AI worker
+
+| Piece | Notes |
+| --- | --- |
+| Migration | `claim_processing_queue` + `extend_processing_queue_lock` (SKIP LOCKED) |
+| Function | `process-queue` — Bearer = `SUPABASE_SERVICE_ROLE_KEY` only |
+| Modules | `services/resume-processing/*` (parse → prompt → Gemini → validate → persist) |
+| Versions | `rr-ai-prompt-1.0.0` / `rr-ai-response-1.0.0` |
+
+```bash
+supabase secrets set \
+  SUPABASE_SERVICE_ROLE_KEY=... \
+  GEMINI_API_KEY=... \
+  GEMINI_MODEL=gemini-2.0-flash \
+  AI_MAX_TRANSIENT_RETRIES=2 \
+  AI_CALL_TIMEOUT_MS=60000 \
+  QUEUE_VISIBILITY_TIMEOUT_MS=90000 \
+  GEMINI_CONCURRENCY=3 \
+  --project-ref <ref>
+supabase db push --project-ref <ref>
+supabase functions deploy process-queue --project-ref <ref>
+
+# Manual / cron invoke (service role key):
+curl -X POST "$SUPABASE_URL/functions/v1/process-queue" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json"
+```
 
 ## Out of scope here
 
 - Schema / RLS / analytics views → Phase 3 (see [`migrations/README.md`](./migrations/README.md))  
 - Login/Signup screens + route guards → Phase 4  
 - Upload UI → Phase 7  
-- AI worker / Gemini → Phase 9  
 - Progress polling UI → CP-23  
+- Ranking UI → Phase 10  
 
 ## Phase 3–5 status
 
