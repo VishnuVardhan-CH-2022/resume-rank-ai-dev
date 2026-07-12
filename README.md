@@ -43,9 +43,10 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 - [AI Design & Prompt Engineering Document (RR-AI-008 v1.0.0)](./docs/03-specialty/08-AI-Design-Document.md)
 - [Security Design Document (RR-SEC-009 v1.0.0)](./docs/03-specialty/09-Security-Design.md)
 - [Testing & Quality Assurance Document (RR-TEST-010 v1.0.0)](./docs/03-specialty/10-Testing-Document.md)
+- [Deployment Guide (RR-DEP-011 v1.0.0)](./docs/04-delivery/11-Deployment-Guide.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 3 complete for specialty core — next: Deployment Guide (RR-DEP-011).
+Phase 4 in progress — next: Cursor Developer Guide (RR-DEV-012).

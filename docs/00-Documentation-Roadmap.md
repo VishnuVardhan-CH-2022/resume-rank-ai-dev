@@ -321,7 +321,7 @@ flowchart TD
 | **Dependencies** | RR-SDD-004, RR-SEC-009 (and practically RR-DB-005, RR-API-006) |
 | **When it should be created** | Phase 4, after security design; ideally when first production-like deploy is attempted |
 | **Used by development?** | **Yes** — required to run and ship the application |
-| **Status** | Not started |
+| **Status** | Complete (v1.0.0) |
 
 ### 8.2 Cursor Developer Guide
 
