@@ -293,7 +293,7 @@ flowchart TD
 | **Dependencies** | RR-SRS-003, RR-SDD-004; preferably RR-AI-008 and RR-SEC-009 for specialized cases |
 | **When it should be created** | End of Phase 3, after AI and Security designs (so AI/security tests are included) |
 | **Used by development?** | **Yes** — QA plan, test cases, and Definition of Done |
-| **Status** | Not started |
+| **Status** | Complete (v1.0.0) |
 
 ---
 
