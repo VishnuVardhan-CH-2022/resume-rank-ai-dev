@@ -9,6 +9,7 @@ import { SettingsPage } from "@/modules/auth/pages/SettingsPage";
 import { NotFoundPage } from "@/modules/auth/pages/NotFoundPage";
 import { JobsListPage } from "@/modules/jobs/pages/JobsListPage";
 import { JobCreatePage } from "@/modules/jobs/pages/JobCreatePage";
+import { JobEditPage } from "@/modules/jobs/pages/JobEditPage";
 import { JobDetailPage } from "@/modules/jobs/pages/JobDetailPage";
 import { CandidateDetailPage } from "@/modules/candidates/pages/CandidateDetailPage";
 import { AnalyticsPage } from "@/modules/analytics/pages/AnalyticsPage";
@@ -44,6 +45,7 @@ export function AppRouter() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/jobs" element={<JobsListPage />} />
         <Route path="/jobs/new" element={<JobCreatePage />} />
+        <Route path="/jobs/:jobId/edit" element={<JobEditPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
         <Route
           path="/jobs/:jobId/candidates/:candidateId"
