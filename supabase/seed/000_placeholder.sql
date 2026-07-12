@@ -1,1 +1,2 @@
--- ResumeRank AI seed placeholder (Phase 2). Demo fixtures land in later phases.
+-- ResumeRank AI seed bootstrap (runs before demo dataset files).
+-- Kept intentionally empty so additional seed files can be ordered by prefix.
