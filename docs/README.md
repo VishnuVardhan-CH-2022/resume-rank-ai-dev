@@ -26,9 +26,9 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | 3 | 9 | Security Design | RR-SEC-009 | Complete (v1.0.0) | [09-Security-Design.md](./03-specialty/09-Security-Design.md) |
 | 3 | 10 | Testing Document | RR-TEST-010 | Complete (v1.0.0) | [10-Testing-Document.md](./03-specialty/10-Testing-Document.md) |
 | 4 | 11 | Deployment Guide | RR-DEP-011 | Complete (v1.0.0) | [11-Deployment-Guide.md](./04-delivery/11-Deployment-Guide.md) |
-| 4 | 12 | Cursor Developer Guide | RR-DEV-012 | Pending | — |
+| 4 | 12 | Cursor Developer Guide | RR-DEV-012 | Complete (v1.0.0) | [12-Cursor-Developer-Guide.md](./04-delivery/12-Cursor-Developer-Guide.md) |
 | 5 | 13 | Final MBA Report | RR-MBA-013 | Pending | — |
 
 ## Next Document
 
-**Cursor Developer Guide (RR-DEV-012)** — after Deployment Guide acceptance.
+**Final MBA Report (RR-MBA-013)** — after implementation evidence and Developer Guide acceptance.
