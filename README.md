@@ -42,9 +42,10 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 - [UI/UX Design Document (RR-UIX-007 v1.1.0)](./docs/02-design/07-UI-UX-Design-Document.md)
 - [AI Design & Prompt Engineering Document (RR-AI-008 v1.0.0)](./docs/03-specialty/08-AI-Design-Document.md)
 - [Security Design Document (RR-SEC-009 v1.0.0)](./docs/03-specialty/09-Security-Design.md)
+- [Testing & Quality Assurance Document (RR-TEST-010 v1.0.0)](./docs/03-specialty/10-Testing-Document.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 3 in progress — next: Testing Document (RR-TEST-010).
+Phase 3 complete for specialty core — next: Deployment Guide (RR-DEP-011).
