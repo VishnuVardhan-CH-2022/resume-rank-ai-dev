@@ -45,9 +45,10 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 - [Testing & Quality Assurance Document (RR-TEST-010 v1.0.0)](./docs/03-specialty/10-Testing-Document.md)
 - [Deployment Guide (RR-DEP-011 v1.0.0)](./docs/04-delivery/11-Deployment-Guide.md)
 - [Cursor Developer Guide (RR-DEV-012 v1.0.0)](./docs/04-delivery/12-Cursor-Developer-Guide.md)
+- [Final MBA Project Report (RR-MBA-013 v1.0.0)](./docs/05-mba-report/13-Final-MBA-Report.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 4 delivery docs complete — next: Final MBA Report (RR-MBA-013).
+Documentation suite complete (RR-DOC-000 through RR-MBA-013). Next: implement per Developer/Deployment guides and insert MBA Chapter 15 screenshots.
