@@ -38,10 +38,11 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 - [Software Requirements Specification (RR-SRS-003 v1.1.0)](./docs/01-requirements/03-Software-Requirements-Specification.md)
 - [System Design Document (RR-SDD-004 v1.1.0)](./docs/02-design/04-System-Design-Document.md)
 - [Database Design Document (RR-DB-005 v1.1.0)](./docs/02-design/05-Database-Design-Document.md)
-- [API Design Specification (RR-API-006 v1.0.0)](./docs/02-design/06-API-Design-Specification.md)
+- [API Design Specification (RR-API-006 v1.1.0)](./docs/02-design/06-API-Design-Specification.md)
+- [UI/UX Design Document (RR-UIX-007 v1.0.0)](./docs/02-design/07-UI-UX-Design-Document.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Phase 2 in progress — next: UI/UX Design Document (RR-UIX-007).
+Phase 2 complete for design core — next: AI Design Document (RR-AI-008).
