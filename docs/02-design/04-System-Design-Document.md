@@ -16,9 +16,8 @@
 | **Document Title** | System Design Document |
 | **Document Number** | Document 04 |
 | **Document ID** | RR-SDD-004 |
-| **Version** | 1.1.0 |
+| **Version** | 1.0.0 |
 | **Status** | Baseline — Ready for Database Design |
-| **Supersedes** | RR-SDD-004 v1.0.0 |
 | **Classification** | Internal — MBA Final Year Project |
 | **Specialization** | Artificial Intelligence & Data Science |
 | **Document Type** | Software Design Description (IEEE 1016) |
@@ -46,8 +45,7 @@ This document **does not** invent product functionality beyond RR-PRD-002 and RR
 | Version | Date | Author | Description of Change | Review Status |
 | --- | --- | --- | --- | --- |
 | 0.1.0 | 12 July 2026 | Vish Var | SDD outline aligned to IEEE 1016 and SRS v1.1.0 | Draft |
-| 1.0.0 | 12 July 2026 | Vish Var | Complete system design with diagrams, ADRs, and Design Review Report | Superseded |
-| 1.1.0 | 12 July 2026 | Vish Var | Architectural refinement: async screening (HTTP 202), runtime-independent Resume Processing Service, refined candidate status lifecycle, upload compensation, Analytics merge, logging split, threat/polling clarifications; physical DB details deferred to RR-DB-005 | Current |
+| 1.0.0 | 12 July 2026 | Vish Var | Complete system design with diagrams, ADRs, and Design Review Report | Current |
 
 ---
 
@@ -85,15 +83,16 @@ This document **does not** invent product functionality beyond RR-PRD-002 and RR
 | F-03 | Layered / Clean Architecture | §3.5 |
 | F-04 | Component Interaction Diagram | §3.6 |
 | F-05 | Technology Runtime Topology | §4.3 |
-| F-06 | Async Screening Sequence | §8.6 |
+| F-06 | Screening Sequence Diagram | §8.5 |
 | F-07 | Conceptual ER Diagram | §7.2 |
-| F-08 | Candidate Status Lifecycle | §6.7 |
-| F-09 | Upload Compensation Flow | §6.5.1 |
-| F-10 | Canonical AI Pipeline | §9.2 |
-| F-11 | Security Trust Boundary | §10.11 |
+| F-08 | Candidate Status Lifecycle | §6.7 / §9.8 |
+| F-09 | Resume Processing Pipeline | §9.2 |
+| F-10 | AI Pipeline | §9.3 |
+| F-11 | Security Trust Boundary | §10.8 |
 | F-12 | Deployment Architecture | §11.2 |
 | F-13 | Repository Folder Structure | §3.7 |
-| F-14 | Resume Processing Composition | §5.3 |
+| F-14 | Evaluation Retry / Audit Flow | §9.7 |
+| F-15 | Upload Validation Sequence | §8.6 |
 
 ---
 
@@ -121,7 +120,7 @@ The purpose of this SDD is to provide an implementation-ready software design fo
 
 1. Translates RR-ARCH-001 views into detailed component and module designs
 2. Satisfies RR-PRD-002 product capabilities and RR-SRS-003 v1.1.0 shall-statements
-3. Guides frontend, Resume Processing Service, database, and AI integration work
+3. Guides frontend, Edge Function, database, and AI integration work
 4. Records design decisions, risks, and operational tactics for academic and engineering review
 
 ## Scope
@@ -169,13 +168,13 @@ ResumeRank AI is an AI-assisted resume screening and candidate ranking SPA for a
 | --- | --- |
 | Satisfy SRS Must requirements | Traceable module and API designs |
 | Preserve human-in-the-loop | No auto-reject/hire controls in any module |
-| Protect secrets | Gemini and privileged keys only in Resume Processing Service runtime |
+| Protect secrets | Gemini and service-role keys only in Edge Functions |
 | Enable academic auditability | Active evaluation + evaluation audit history |
-| Remain implementable on fixed stack | React/Vite/Supabase/Gemini/Vercel; processor runtime abstracted |
+| Remain implementable on fixed stack | React/Vite/Supabase/Gemini/Vercel only |
 
 ### 1.4 System Overview
 
-HR users authenticate via Supabase Auth, manage job openings with JD text, and upload PDF/DOCX resumes to private Storage. Upload returns immediately after candidate persistence (**HTTP 202** for processing acceptance). A runtime-independent **Resume Processing Service** asynchronously parses text, extracts structured candidate fields (CE-01–CE-14), calls Google Gemini for match score/rationale/summary, and persists results under RLS. The SPA polls or subscribes for status changes and presents ranking and analytics on Vercel.
+HR users authenticate via Supabase Auth, manage job openings with JD text, upload PDF/DOCX resumes to private Storage, and run screening via an Edge Function Screening Engine. The engine parses text (pdf-parse/mammoth), extracts structured candidate fields (CE-01–CE-14), calls Google Gemini for match score/rationale/summary, persists results under RLS, and supports ranking and analytics in the SPA hosted on Vercel.
 
 ### 1.5 Document Conventions
 
@@ -183,13 +182,13 @@ HR users authenticate via Supabase Auth, manage job openings with JD text, and u
 | --- | --- |
 | Shall / Should / May | Inherited modality from SRS |
 | Active evaluation | Current unique evaluation per candidate (SRS-FR-051) |
-| Archive | Soft close for jobs and/or candidates (`archived`) |
-| Resume Processing Service | Runtime-independent worker for parse → AI → persist (may run as Edge, Node worker, or serverless function) |
-| `apps/web`, `supabase/` | Target repository layout from RR-ARCH-001; processor host is not fixed to Edge Functions |
+| Archive | Soft job close (`lifecycle_status=archived`) |
+| Screening Engine | Edge Function orchestrating parse → extract → AI → persist |
+| `apps/web`, `supabase/` | Target repository layout from RR-ARCH-001 |
 
 ### 1.6 Definitions
 
-See Glossary in Appendix A. Key design terms: Resume Processing Service, Active Evaluation, Evaluation Audit History, Candidate Profile, Job Lifecycle Status.
+See Glossary in Appendix A. Key design terms: Screening Engine, Active Evaluation, Evaluation Audit History, Candidate Profile, Job Lifecycle Status.
 
 ### 1.7 Abbreviations
 
@@ -243,7 +242,7 @@ Primary path completable without training manual (SRS-NFR-013); distinct process
 
 ### 2.8 Modularity
 
-Feature modules under `apps/web/src/modules/*`. Resume Processing Service lives in a dedicated deployable unit (host chosen at implementation time; not architecturally bound to Supabase Edge Functions).
+Feature modules under `apps/web/src/modules/*` and Screening Engine function under `supabase/functions/screen-candidates/`.
 
 ### 2.9 Separation of Concerns
 
@@ -283,18 +282,16 @@ flowchart TB
 
 ### 3.1 Architecture Selection Rationale
 
-ResumeRank AI uses **SPA + BaaS + asynchronous Resume Processing Service** as a refinement of RR-ARCH-001 (ADR-001–ADR-004):
+ResumeRank AI uses **SPA + BaaS + Edge Function AI orchestration** as selected in RR-ARCH-001 (ADR-001–ADR-004):
 
 | Driver | Why this architecture |
 | --- | --- |
 | Academic/production hybrid timeline | Managed Auth/DB/Storage reduces custom backend |
-| Secret protection | Processor runtime isolates Gemini keys (BR-05) |
-| Non-blocking UX | Async accept (HTTP 202) + status polling/subscription (SRS-NFR-011) |
-| Runtime portability | Parser/AI host abstracted so Node vs Edge is an implementation choice |
+| Secret protection | Edge Functions isolate Gemini keys (BR-05) |
 | Job-centric screening | Clear aggregate boundaries in PostgreSQL |
 | Human-in-the-loop | UI presents rankings; no autonomous decision services |
 
-Alternatives rejected for v1: Next.js SSR (unnecessary), custom NestJS monolith API (higher ops), client-side Gemini (violates BR-05), synchronous batch screening HTTP (blocks UI; rejected in v1.1).
+Alternatives rejected for v1: Next.js SSR (unnecessary), custom NestJS API (higher ops), client-side Gemini (violates BR-05).
 
 ### 3.2 System Context Diagram
 
@@ -306,11 +303,9 @@ flowchart TB
   SB --> Auth[Auth]
   SB --> PG[(PostgreSQL + RLS)]
   SB --> ST[(Private Storage)]
-  SPA -->|enqueue / trigger async| RPS[Resume Processing Service]
-  RPS --> PG
-  RPS --> ST
-  RPS --> Gemini[Google Gemini API]
-  RPS --> Parse[pdf-parse / mammoth adapters]
+  SB --> EF[Edge Functions]
+  EF --> Gemini[Google Gemini API]
+  EF --> Parse[pdf-parse / mammoth]
 ```
 
 ### 3.3 High-Level Architecture
@@ -323,10 +318,7 @@ flowchart LR
   subgraph Platform
     Auth[Supabase Auth]
     API[PostgREST / Storage APIs]
-  end
-  subgraph Processor["Resume Processing Service — runtime independent"]
-    Queue[Work Queue / Claim]
-    Pipeline[Parse → AI → Persist]
+    EF[Screening Engine]
   end
   subgraph Data
     PG[(PostgreSQL)]
@@ -337,13 +329,12 @@ flowchart LR
   end
   UI --> Auth
   UI --> API
-  UI -->|HTTP 202 accept| Queue
+  UI --> EF
   API --> PG
   API --> ST
-  Queue --> Pipeline
-  Pipeline --> ST
-  Pipeline --> PG
-  Pipeline --> G
+  EF --> ST
+  EF --> PG
+  EF --> G
 ```
 
 ### 3.4 Application Architecture
@@ -352,10 +343,8 @@ flowchart LR
 | --- | --- |
 | Routing | Protected app shell after auth; public login/signup |
 | State | Server state via Supabase client queries; local UI state for forms/upload |
-| Upload side effects | Validate → Storage put → DB candidate insert (`uploaded`) → accept processing (**202**) → enqueue work |
-| Processing | Resume Processing Service claims queued work asynchronously |
-| Status UX | UI polls or subscribes until terminal states (§13.1) |
-| Read models | Ranked candidates by active `match_score` desc; Analytics aggregates |
+| Side effects | Upload to Storage → insert candidates → invoke Edge Function (ST-01; ST-02 optional) |
+| Read models | Ranked candidates by active `match_score` desc; dashboard aggregates |
 
 ### 3.5 Logical / Layered Architecture
 
@@ -368,9 +357,9 @@ flowchart TB
   subgraph Application
     JobsUC[Job Use Cases]
     UploadUC[Upload Use Cases]
-    ScreenUC[Screening Accept / Enqueue]
+    ScreenUC[Screening Trigger]
     RankUC[Ranking Queries]
-    AnalyticsUC[Analytics Queries]
+    DashUC[Analytics Queries]
   end
   subgraph Domain
     Job[Job Aggregate]
@@ -379,12 +368,12 @@ flowchart TB
   end
   subgraph Infrastructure
     Supa[Supabase Client]
-    ProcClient[Resume Processing Client]
+    EFAdapter[Edge Function Client]
     Types[Shared Types]
   end
-  Pages --> Comp --> JobsUC & UploadUC & ScreenUC & RankUC & AnalyticsUC
-  JobsUC & UploadUC & ScreenUC & RankUC & AnalyticsUC --> Job & Cand & Eval
-  Job & Cand & Eval --> Supa & ProcClient & Types
+  Pages --> Comp --> JobsUC & UploadUC & ScreenUC & RankUC & DashUC
+  JobsUC & UploadUC & ScreenUC & RankUC & DashUC --> Job & Cand & Eval
+  Job & Cand & Eval --> Supa & EFAdapter & Types
 ```
 
 ### 3.6 Component Interaction Diagram
@@ -393,26 +382,26 @@ flowchart TB
 flowchart TB
   Nav[Navbar] --> Shell[App Shell]
   Side[Sidebar] --> Shell
-  Shell --> AnalyticsUI[Analytics Module]
+  Shell --> Dash[Dashboard]
   Shell --> Jobs[Job Module]
   Jobs --> Upload[Resume Upload]
   Jobs --> Table[Candidate Table]
   Table --> Profile[Candidate Profile]
+  Jobs --> Analytics[Job Analytics]
   Upload --> StorageSvc[Storage Service]
-  Upload --> ResumeSvc[Resume / Candidate Service]
-  Upload --> Accept[Async Accept 202 + Enqueue]
-  Accept --> RPS[Resume Processing Service]
-  RPS --> Parser[Parser Adapter]
-  RPS --> AIPipe[AI Pipeline]
-  RPS --> Audit[Audit Persistence]
+  Upload --> ResumeSvc[Resume/Candidate Service]
   Jobs --> JobSvc[Job Service]
-  AnalyticsUI --> AnalyticsSvc[Analytics Service]
+  ScreenBtn[Run Screening] --> AISvc[Screening Engine]
+  AISvc --> Parser[Parser Service]
+  AISvc --> GeminiSvc[AI / Scoring Service]
+  AISvc --> Audit[Audit Persistence]
+  Dash --> DashSvc[Dashboard Service]
   AuthUI[Auth Screens] --> AuthSvc[Authentication]
 ```
 
 ### 3.7 Repository Folder Structure
 
-Aligned to RR-ARCH-001 §11, with processor host abstracted:
+Aligned to RR-ARCH-001 §11:
 
 ```mermaid
 flowchart TB
@@ -420,18 +409,17 @@ flowchart TB
   Root --> Docs[docs/]
   Root --> Web[apps/web/]
   Root --> SB[supabase/]
-  Root --> Proc[services/resume-processing/]
   Web --> Modules[src/modules/*]
   Web --> Comp[src/components/]
   Web --> Lib[src/lib/]
   SB --> Mig[migrations/]
-  Proc --> Host[Edge or Node or Serverless host — TBD]
+  SB --> Fn[functions/screen-candidates/]
 ```
 
 ```text
 apps/web/src/modules/{auth,jobs,uploads,candidates,ranking,analytics}/
-services/resume-processing/          # runtime-independent processor
-supabase/migrations/                 # schema only; physical details in RR-DB-005
+supabase/functions/screen-candidates/
+supabase/migrations/
 docs/02-design/04-System-Design-Document.md
 ```
 
@@ -445,8 +433,7 @@ docs/02-design/04-System-Design-Document.md
 | --- | --- | --- |
 | Frontend | React + TypeScript + Vite | SPA |
 | UI | Tailwind CSS + shadcn/ui | Design system |
-| Backend | Supabase | Auth, DB, Storage |
-| Processor | Resume Processing Service | Async parse + AI + persist (Edge / Node / serverless host TBD) |
+| Backend | Supabase | Auth, DB, Storage, Edge Functions |
 | Database | PostgreSQL | System of record |
 | Storage | Supabase Storage | Private resumes |
 | Auth | Supabase Auth | Sessions/JWT |
@@ -463,13 +450,12 @@ docs/02-design/04-System-Design-Document.md
 | Vite | Fast DX/builds | SPA-focused | Matches ADR-003 (no SSR) |
 | Tailwind | Rapid consistent styling | Utility verbosity | Speed for v1 UI |
 | shadcn/ui | Accessible primitives | Copy-in components | Aligns SRS-NFR-015 |
-| Supabase | Unified Auth/DB/Storage | Platform coupling | ADR-001; academic delivery speed |
+| Supabase | Unified Auth/DB/Storage/Functions | Platform coupling | ADR-001; academic delivery speed |
 | PostgreSQL + RLS | Relational integrity + row security | Policy complexity | BR-01, BR-09, SRS-NFR-004 |
 | Supabase Storage | Private buckets, signed access | Ops via platform | SRS-FR-013 |
 | Supabase Auth | Managed sessions | Provider constraints | SRS-FR-001–003 |
-| Resume Processing Service | Isolates secrets; runtime-portable | Extra deployable | Removes hard Edge/Deno coupling |
 | Gemini | Strong text reasoning | Cost/latency/vendor dependency | ADR-002; SRS-FR-018–021 |
-| pdf-parse / mammoth | Lightweight parsers for PDF/DOCX | Weak on scanned PDFs; host must support library runtime | ADR-005; SRS-FR-015; OCR out of scope |
+| pdf-parse / mammoth | Lightweight Node parsers | Weak on scanned PDFs | ADR-005; SRS-FR-015; OCR out of scope |
 | Vercel | Git-native SPA deploy | Frontend-only | ADR-003; SRS-NFR-021 |
 
 ### 4.3 Runtime Topology
@@ -480,10 +466,10 @@ flowchart TB
   Browser --> Auth[Supabase Auth]
   Browser --> PG[(PostgreSQL)]
   Browser --> ST[Storage]
-  Browser -->|202 Accepted / enqueue| RPS[Resume Processing Service]
-  RPS --> Gemini[Gemini API]
-  RPS --> PG
-  RPS --> ST
+  Browser --> EF[Edge Function]
+  EF --> Gemini[Gemini API]
+  EF --> PG
+  EF --> ST
 ```
 
 ---
@@ -496,47 +482,45 @@ flowchart TB
 | --- | --- | --- | --- | --- | --- |
 | Navbar | Brand, user menu, sign-out | Session | Nav events | Auth module | Hide protected controls if signed out |
 | Sidebar | Primary nav links | Route, auth | Navigation | App shell | Disabled links when unauthorized |
-| Analytics Module UI | Totals and optional distributions (user + job scope) | Aggregate queries | Charts/KPI UI | Analytics service | Empty states; error toast |
+| Dashboard | Totals: jobs, candidates, completed evals; optional distributions | Aggregate queries | Charts/KPI UI | Dashboard service | Empty states; error toast |
 | Job Module | Create/list/open/update; archive; delete-if-empty | Job forms, filters | Job records | Job service | Validation errors (VR-01–05) |
-| Resume Upload | Multi-file validate/upload; persist candidate; async accept | Files, job_id | Objects + candidates; **HTTP 202** | Storage + Resume services | Per-file reject; compensation (§6.5.1) |
-| Candidate Table | Status chips, ranked/failed list, pagination/filter | job_id, query | Rows | Ranking + status poll | Show non-completed rows |
+| Resume Upload | Multi-file select, type/size validation, progress | Files, job_id | Storage objects + pending candidates | Storage + Resume services | Per-file reject; continue batch (SRS-FR-017) |
+| Candidate Table | Ranked/failed list, status chips, pagination/filter | job_id, query | Rows | Ranking queries | Show failed rows (SRS-FR-030) |
 | Candidate Profile | Score, rationale, summary, CE fields | candidate_id | Detail view | Candidate + evaluation reads | Partial extraction OK |
-| Job Screening Progress | Aggregate status counts while processing | job_id | Progress UI | Candidate status queries | Stops on terminal states (§13.1) |
+| Analytics | Job/dashboard metrics | Scope user/job | Metric widgets | Dashboard service | Fallback zeros |
 
 ### 5.2 Backend / Platform Components
 
-Only components with independent responsibilities. Parse/AI are **stages** inside Resume Processing Service—not separately deployed microservices.
+In v1, “backend components” are Supabase capabilities plus the Screening Engine Edge Function services (logical services inside the function).
 
 | Component | Responsibilities | Inputs | Outputs | Dependencies | Failure Handling |
 | --- | --- | --- | --- | --- | --- |
 | Authentication | Register/sign-in/sign-out/session | Credentials | JWT session | Supabase Auth | EH-AUTH |
-| Job Service | Job ops; archive; constrained delete | Job DTO | Job rows | PostgreSQL + RLS | Reject illegal delete |
-| Resume / Candidate Service | Persist candidates; link storage; enqueue work | Upload metadata | Candidate rows; queue message | DB + Storage + queue | Compensation on partial failure |
-| Storage Service | Private object put/get/delete | File, path | Object path | Supabase Storage | EH-STORE; delete on compensate |
-| Resume Processing Service | Claim queue; parse; AI pipeline; persist; status transitions | Queue payload | Updated rows | Storage, DB, Gemini, parsers | Failure terminals; siblings unaffected |
-| Analytics Service | Aggregations for Analytics Module | owner_user_id / job_id | Counts/distributions | SQL (physical views in RR-DB-005) | Safe empty aggregates |
-| Audit Persistence | History snapshot before active overwrite | Prior active evaluation | History row | DB | Block overwrite if history write fails |
+| Job Service | CRUD-ish job ops; archive; constrained delete | Job DTO | Job rows | PostgreSQL + RLS | VR-04/05; reject illegal delete |
+| Resume Service | Create candidate stubs; link storage paths | Upload metadata | Candidate rows `pending` | DB + Storage | No candidate on failed upload |
+| Parser Service | Extract text PDF/DOCX | File bytes | Plain text or fail | pdf-parse, mammoth | `failed_parse` |
+| AI Service | Prompt Gemini; parse JSON | JD + text (+ schema) | Structured AI payload | Gemini API | Retry then `failed_ai` |
+| Scoring Service | Validate score 0–100; rationale/summary gates | AI payload | Validated evaluation fields | Domain validators | Reject invalid → retry/fail |
+| Extraction Mapper | Map CE-01–CE-14 into profile | AI/structured data | Candidate profile fields | Scoring/AI output | Null allowed for missing fields |
+| Dashboard Service | Aggregations | owner_user_id / job_id | Counts/distributions | SQL views/queries | Safe empty aggregates |
+| Storage Service | Private object put/get | File, path | Object path | Supabase Storage | EH-STORE |
+| Logging Service | Structured logs + audit history writes | Events, prior evaluations | Logs / history rows | Edge logs + DB | Best-effort logs; history write required before overwrite |
+| Audit Persistence | Copy active evaluation to history | Prior active evaluation | History row | DB | Block overwrite if history write fails |
 
-### 5.3 Resume Processing Service Composition
-
-Host is runtime-independent (Edge Function, Node Worker, or Serverless Function).
+### 5.3 Screening Engine Composition
 
 ```mermaid
 flowchart LR
-  Claim[Async claim from queue] --> Load[Load Job + Candidate + File]
-  Load --> Extract[Text Extraction]
-  Extract -->|unusable| FP[failed_parse]
-  Extract -->|ok| TVal[Text Validation]
-  TVal --> Prompt[Prompt Assembly]
-  Prompt --> Gem[Gemini]
-  Gem --> JVal[JSON Validation]
-  JVal --> SVal[Score Validation]
-  SVal -->|valid| Hist[Audit if overwrite]
-  Hist --> Save[Persistence]
+  Trigger[HTTP Trigger + JWT] --> Load[Load Job + Candidates + Files]
+  Load --> Parse[Parser Service]
+  Parse -->|text ok| Extract[Extraction + AI Service]
+  Parse -->|empty| FP[failed_parse]
+  Extract --> Score[Scoring Validation]
+  Score -->|valid| Hist[Audit if overwrite]
+  Hist --> Save[Save Active Eval + Profile]
   Save --> Done[completed]
-  JVal -->|invalid| Retry[Bounded Retry]
-  SVal -->|invalid| Retry
-  Retry --> Gem
+  Score -->|invalid| Retry[Bounded Retry]
+  Retry --> Extract
   Retry -->|exhausted| FA[failed_ai]
 ```
 
@@ -549,12 +533,15 @@ flowchart LR
 | Module | SRS Features | Notes |
 | --- | --- | --- |
 | Authentication | SF-01 | UC-01, UC-02 |
-| Analytics | SF-07 | Merges former Dashboard + Reporting |
+| Dashboard | SF-07 | UC-08 |
 | Job Management | SF-02 | Archive/delete included |
-| Resume Upload | SF-03 | Async 202 + compensation |
-| Resume Processing | SF-04 + SF-05 | Runtime-independent service |
-| Candidate Ranking | SF-06 | Includes status progress |
-| Audit Logging | SRS-FR-053, NFR-017 | With Platform + Application logging |
+| Resume Upload | SF-03 | |
+| Resume Parsing | SF-04 (text) | Inside Screening Engine |
+| AI Processing | SF-05 + extraction | Inside Screening Engine |
+| Candidate Ranking | SF-06 | |
+| Reporting | SF-07 | Analytics only — no separate BI |
+| Administration | Minimal settings | Not a full admin console (SRS UC-L-02) |
+| Audit Logging | SRS-FR-053, NFR-017 | Evaluation history + operational logs |
 
 ### 6.2 Authentication Module
 
@@ -570,14 +557,14 @@ flowchart LR
 | Security | HTTPS; anon key only on client |
 | Future | OAuth providers if needed |
 
-### 6.3 Analytics Module
+### 6.3 Dashboard Module
 
 | Field | Design |
 | --- | --- |
-| Purpose | Screening visibility (BG-04 / SF-07) — **merged Dashboard + Reporting** |
-| Responsibilities | User-level and job-level totals; optional status/score distributions |
-| Workflow | On load, query aggregates scoped to owner / selected job |
-| Inputs | Auth user id; optional job_id |
+| Purpose | Screening visibility (BG-04) |
+| Responsibilities | Show totals; optional status/score distributions |
+| Workflow | On load, query aggregates scoped to owner |
+| Inputs | Auth user id |
 | Outputs | KPI cards / charts |
 | Business Rules | Owner-scoped only |
 | Error Handling | Empty/error states |
@@ -602,128 +589,106 @@ flowchart LR
 
 | Field | Design |
 | --- | --- |
-| Purpose | Bulk intake with **async processing accept** |
-| Responsibilities | Validate MIME/size; store privately; persist candidate; return **HTTP 202**; enqueue processing |
-| Workflow | Validate → Storage put → DB insert (`uploaded`) → enqueue (`queued`) → **202 Accepted** → UI polls/subscribes |
-| Inputs | PDF/DOCX; job_id |
-| Outputs | Storage paths; candidate ids; 202 acceptance |
-| Business Rules | BR-04, BR-06; SRS-FR-010–014, 017; ST-01 re-queue supported; ST-02 optional auto-enqueue |
-| Error Handling | Per-file rejection; batch continues; compensation §6.5.1 |
+| Purpose | Bulk intake of resumes for an active job |
+| Responsibilities | Validate MIME/size; store privately; create `pending` candidates |
+| Workflow | Select files → validate each → store → insert candidate → optional ST-02 auto-screen; ST-01 always available |
+| Inputs | PDF/DOCX ≤ 5MB default; job_id |
+| Outputs | Storage paths; candidate ids |
+| Business Rules | BR-04, BR-06; SRS-FR-010–014, 017 |
+| Error Handling | Per-file rejection; batch continues |
 | Security | Private bucket; authz on job ownership |
 | Future | Additional formats only via change control |
 
-#### 6.5.1 Upload Compensation Flow
-
-```mermaid
-flowchart TD
-  A[Validate file] -->|fail| R[Reject file — no storage]
-  A -->|ok| B[Upload to Storage]
-  B -->|fail| E1[EH-STORE — no candidate]
-  B -->|ok| C[Insert candidate uploaded]
-  C -->|fail| D[Delete Storage object]
-  D --> E2[Report compensation — no orphan object]
-  C -->|ok| F[Enqueue processing]
-  F --> G[Status queued]
-  G --> H[HTTP 202 Accepted]
-  F -->|enqueue fail| I[Keep candidate — log failure — allow re-queue]
-```
-
-| Case | Action |
-| --- | --- |
-| Storage succeeds, DB insert fails | **Delete** uploaded object; no orphans |
-| DB succeeds, enqueue/processing fails | **Keep** candidate; update status; **log** failure; allow ST-01 re-queue |
-| Processing fails later | Keep candidate; terminal `failed_parse` / `failed_ai`; siblings continue |
-
-### 6.6 Resume Processing Module
-
-Combines parse + AI into one module owned by Resume Processing Service.
+### 6.6 Resume Parsing Module
 
 | Field | Design |
 | --- | --- |
-| Purpose | Async text extraction, structured extraction, scoring, summarization, persistence |
-| Responsibilities | Claim queue; drive status lifecycle; run AI pipeline (§9); audit on overwrite |
-| Workflow | `queued` → `parsing` → (`failed_parse` \| `parsed`) → `ai_processing` → (`completed` \| `failed_ai`) |
-| Inputs | Candidate id, job JD, storage path |
-| Outputs | Profile fields, active evaluation, status |
-| Business Rules | BR-02, BR-03, BR-05, BR-08, BR-12; SRS-FR-015–026, 048–053 |
-| Error Handling | Isolate per candidate; bounded AI retry then `failed_ai` |
-| Security | Secrets only in processor runtime |
-| Future | OCR / alternate LLM behind adapters |
+| Purpose | Obtain usable plain text |
+| Responsibilities | pdf-parse for PDF; mammoth for DOCX; detect empty text |
+| Workflow | Fetch object → parse → if empty then `failed_parse` else continue |
+| Inputs | File bytes + MIME |
+| Outputs | Resume text |
+| Business Rules | CSL-04; SRS-FR-015/016 |
+| Error Handling | Isolate failure; no Gemini call |
+| Security | Server-side only |
+| Future | OCR (FS-03) behind same adapter |
 
-### 6.7 Candidate Status Lifecycle
+### 6.7 AI Processing Module
 
-Refined design states. SRS coarse mapping: `pending`≈`uploaded`/`queued`; `processing`≈`parsing`/`parsed`/`ai_processing`; terminals retain SRS meaning. `failed_parse` retained to satisfy SRS-FR-016 without changing business rules.
+| Field | Design |
+| --- | --- |
+| Purpose | Extraction assistance + score/rationale/summary |
+| Responsibilities | Prompt assembly; Gemini call; JSON validation; profile mapping; active eval write; history on overwrite |
+| Workflow | See §9 |
+| Inputs | JD text, resume text, candidate id, prompt version |
+| Outputs | CE fields, match_score, rationale, summary, model metadata |
+| Business Rules | BR-02, BR-03, BR-05, BR-08, BR-12 |
+| Error Handling | Bounded retry → `failed_ai` |
+| Security | Edge secrets only |
+| Future | Provider plug-in (FS-04) |
 
-| State | Meaning | Terminal? |
-| --- | --- | --- |
-| `uploaded` | Candidate + storage persisted | No |
-| `queued` | Accepted for async processing | No |
-| `parsing` | Text extraction in progress | No |
-| `parsed` | Usable text available | No |
-| `ai_processing` | Gemini extract/score in progress | No |
-| `completed` | Valid active evaluation persisted | Yes |
-| `failed_parse` | Unusable/empty text | Yes |
-| `failed_ai` | AI/schema failure after retries | Retryable |
-| `archived` | Soft-archived with job/candidate archive | Yes for processing |
+**Candidate lifecycle (module view):**
 
 ```mermaid
 stateDiagram-v2
-  [*] --> uploaded: storage+DB commit
-  uploaded --> queued: enqueue / 202 accept
-  queued --> parsing: worker claim
-  parsing --> failed_parse: unusable text
-  parsing --> parsed: text ok
-  parsed --> ai_processing: start Gemini pipeline
-  ai_processing --> completed: valid score+summary
-  ai_processing --> failed_ai: retries exhausted
-  failed_ai --> queued: retry ST-01
-  uploaded --> archived: archive
-  queued --> archived: archive
-  parsed --> archived: archive
-  completed --> archived: archive
-  failed_parse --> archived: archive
-  failed_ai --> archived: archive
+  [*] --> pending
+  pending --> processing: Run Screening / Retry
+  processing --> completed: valid active evaluation
+  processing --> failed_parse: unusable text
+  processing --> failed_ai: AI exhausted
+  failed_ai --> processing: retry
 ```
 
 ### 6.8 Candidate Ranking Module
 
 | Field | Design |
 | --- | --- |
-| Purpose | Explainable shortlist + in-flight progress |
-| Responsibilities | Sort by active match_score desc; show statuses; open profile; progress counts |
-| Workflow | Query job candidates → sort completed by score → show failures/in-progress → poll until terminal |
+| Purpose | Present explainable shortlist |
+| Responsibilities | Sort by active match_score desc; show status; open profile |
+| Workflow | Query completed + failed for job → sort completed → paginate/filter |
 | Inputs | job_id |
-| Outputs | Ranked UI + progress |
+| Outputs | Ranked UI |
 | Business Rules | BR-02, BR-10; no auto-reject UI |
 | Error Handling | Empty/in-progress states |
 | Security | Owner RLS |
 | Future | CSV export (Could) |
 
-### 6.9 Logging Cross-Cut
+### 6.9 Reporting Module
 
-| Logging Class | Owner | Purpose |
-| --- | --- | --- |
-| **Audit Logging** | Audit Persistence + history table | Evaluation overwrite history; screening audit events |
-| **Platform Logging** | Host platforms | Infra diagnostics |
-| **Application Logging** | SPA + processor structured logs | UX/processing errors without secrets |
+Implements SF-07 analytics only (not a separate reporting warehouse). Reuses Dashboard Service queries at user and job scope.
 
-Profile/session settings remain under Authentication; operator setup remains in Deployment Guide (no separate Administration or Reporting modules).
+### 6.10 Administration Module
+
+v1 administration is **minimal**: profile/session settings and operator procedures via Deployment Guide. No in-app multi-tenant admin console (SRS UC-L-02). Design includes configuration via env (`.env.example`) only.
+
+### 6.11 Audit Logging Module
+
+| Field | Design |
+| --- | --- |
+| Purpose | Academic/operational auditability |
+| Responsibilities | Before active evaluation overwrite, insert history snapshot; log screening events |
+| Workflow | Read active → insert history → write new active (transactional unit) |
+| Inputs | Prior evaluation row |
+| Outputs | `evaluation_history` record; structured logs |
+| Business Rules | BR-03, BR-12; SRS-FR-053 |
+| Error Handling | If history insert fails, abort overwrite |
+| Security | Owner-scoped history reads |
+| Future | UI to browse history (FS-12) |
 
 ---
 
 ## 7. Database Interaction Design
 
-Physical DDL, indexes, unique constraints, storage paths, SQL views, chunk sizes, and retry numeric defaults are **specified in RR-DB-005**. This SDD defines interaction intent only.
+Physical DDL is finalized in RR-DB-005. This section defines interaction design required by SRS-DB-*.
 
 ### 7.1 Database Architecture
 
 | Concern | Design |
 | --- | --- |
 | Engine | PostgreSQL on Supabase |
-| Access | User JWT + RLS for SPA; Resume Processing Service uses least-privilege credentials with mandatory ownership checks |
+| Access | PostgREST/SDK with user JWT; Edge Function may use service role carefully for screening writes still constrained by job ownership checks |
 | Security | RLS by `auth.uid()` ownership |
 | Files | Object storage paths on candidates; binaries not in bytea |
-| Deferred to RR-DB-005 | Indexes, one-active uniqueness, path conventions, views |
 
 ### 7.2 Entity Relationships
 
@@ -749,7 +714,6 @@ erDiagram
     string status
     string storage_path
     string original_filename
-    string failure_code
   }
   CANDIDATE_PROFILE {
     uuid candidate_id PK
@@ -762,6 +726,11 @@ erDiagram
     jsonb certifications
     jsonb projects
     text resume_summary
+    string linkedin
+    string github
+    string portfolio
+    jsonb languages
+    string location
   }
   EVALUATION_ACTIVE {
     uuid candidate_id PK
@@ -777,6 +746,8 @@ erDiagram
     numeric match_score
     text rationale
     text summary
+    jsonb model_metadata
+    timestamptz evaluated_at
     timestamptz archived_at
   }
 ```
@@ -785,42 +756,82 @@ erDiagram
 
 | Operation | Flow |
 | --- | --- |
-| Create job | Insert job `active` |
-| Archive job | Soft archive; block new processing; candidates may become `archived` |
-| Delete job | Only if zero candidates |
-| Upload resume | Storage → DB `uploaded` with compensation → enqueue `queued` → **202** |
-| Processing unit | Claim → §6.7 transitions → persist → terminal |
-| Retry | `failed_ai` → `queued` → async pipeline |
+| Create job | Insert job `active` with owner_user_id=auth.uid() |
+| Archive job | Update lifecycle_status=`archived`; block uploads/screening (VR-05, CSL-08) |
+| Delete job | Allow only if no candidates; else reject |
+| Upload resume | Storage upload + insert candidate `pending` (prefer coordinated client steps; compensate on failure) |
+| Screening unit | Per candidate: status→processing; parse; AI; if prior active exists → insert history; upsert active; upsert profile; status terminal |
+| Retry | Same screening unit for `failed_ai` |
 
-### 7.4 Physical Mechanisms (Deferred)
+**Screening write unit (logical transaction):**
 
-Indexes, partial unique constraints for one-active evaluation, storage path layout, analytics SQL views, chunk sizes, and retry defaults are defined in **RR-DB-005**.
+1. Verify job active + ownership + JD present  
+2. Set `processing`  
+3. Parse/extract/score  
+4. If replacing active evaluation → insert history snapshot  
+5. Upsert active evaluation + profile  
+6. Set `completed` or failure status  
+7. On any mid-flight failure after step 2 → `failed_parse`/`failed_ai` without leaving stuck `processing` beyond retry policy
+
+### 7.4 Indexes (Design Intent)
+
+| Index Intent | Purpose |
+| --- | --- |
+| jobs(owner_user_id, lifecycle_status, created_at desc) | List active jobs |
+| candidates(job_id, status) | Status aggregates/filters |
+| candidates(job_id, created_at) | Ordering |
+| evaluation_active(match_score desc) via job join | Ranking |
+| evaluation_history(candidate_id, archived_at desc) | Audit browse |
+
+Exact DDL in RR-DB-005.
 
 ### 7.5 Caching Strategy
 
-CDN for static assets; short-lived client query cache with invalidation; polling overrides stale status; no Redis required for v1.
+| Layer | Tactic |
+| --- | --- |
+| CDN | Vercel caches static assets |
+| Client | Short-lived query cache for dashboard/job lists; invalidate on mutations |
+| Server | No Redis in v1; rely on Postgres indexes |
+| AI | No cross-candidate cache of Gemini outputs (each candidate unique) |
 
 ### 7.6 Concurrency
 
-Bounded concurrency inside Resume Processing Service; idempotent claim skips in-flight/`completed` unless retry; re-queue from `failed_ai`.
+| Scenario | Design |
+| --- | --- |
+| Parallel candidate screening | Bounded worker pool inside Edge Function / sequential-with-limit to respect Gemini quotas |
+| Double-click Run Screening | Idempotent per candidate: skip if already `processing`/`completed` unless retry |
+| Retry vs in-flight | Reject retry unless status is `failed_ai` |
 
-### 7.7–7.9 Validation, Soft Delete, Retention
+### 7.7 Data Validation
 
-VR-* in app + DB checks (DDL in RR-DB-005); job soft archive; evaluation history retained; academic retention without automated purge in v1.
+Enforce VR-* via DB checks/constraints where practical and application validators before writes. Status enum constrained (SRS-DB-014). match_score numeric 0–100 check on active evaluations.
+
+### 7.8 Soft Delete Strategy
+
+| Entity | Strategy |
+| --- | --- |
+| Job | Soft archive (`archived`); hard delete only if empty |
+| Candidate | No hard-delete requirement in v1; failures retained for inspectability (SRS-NFR-008) |
+| Evaluation | Active overwritten; previous retained in history (not deleted) |
+
+### 7.9 Data Retention
+
+v1 retains owner-scoped jobs, candidates, profiles, active evaluations, and history for academic demo/audit. No automated purge in v1; future retention policies via change control.
 
 ### 7.10 Data Flow Summary
 
 ```mermaid
 flowchart LR
-  File[Resume] --> ST[(Storage)]
-  ST --> Cand[(candidates uploaded)]
-  Cand -->|202 enqueue| Q[Queue]
-  Q --> RPS[Resume Processing Service]
-  JD[(jobs.jd_text)] --> RPS
-  RPS --> Prof[(candidate_profile)]
-  RPS --> Act[(evaluation_active)]
-  Act -->|overwrite| Hist[(evaluation_history)]
-  Act --> UI[Ranking / Analytics UI poll]
+  JD[JD Text] --> Job[(jobs)]
+  File[Resume File] --> ST[(storage)]
+  ST --> Cand[(candidates)]
+  Job --> EF[Screening Engine]
+  Cand --> EF
+  EF --> Prof[(candidate_profile)]
+  EF --> Act[(evaluation_active)]
+  Act -->|on overwrite| Hist[(evaluation_history)]
+  Act --> RankUI[Ranking UI]
+  Prof --> ProfileUI[Profile UI]
 ```
 
 ---
@@ -835,7 +846,7 @@ Conceptual APIs only — no implementation code. Formal contracts in RR-API-006.
 | --- | --- |
 | Data CRUD | Supabase client → PostgREST tables/views |
 | File I/O | Supabase Storage API |
-| Processing accept | HTTPS endpoint on Resume Processing Service (or BFF) returning **202 Accepted** |
+| Screening | HTTPS Edge Function `screen-candidates` |
 | Auth | Supabase Auth API |
 
 ### 8.2 Conceptual API Surface
@@ -844,167 +855,228 @@ Conceptual APIs only — no implementation code. Formal contracts in RR-API-006.
 | --- | --- | --- |
 | Auth signUp/signIn/signOut | Session lifecycle | Public/auth |
 | jobs insert/select/update | Job management | Owner RLS |
-| jobs archive/delete | Lifecycle | Owner + delete rules |
-| storage upload/download/delete | Resume binaries | Owner policies |
+| jobs archive/delete RPC or update | Lifecycle | Owner + delete rules |
+| storage upload/download | Resume binaries | Owner policies |
 | candidates insert/select | Intake and listing | Owner via job |
 | evaluations select | Ranking/detail | Owner via job |
 | evaluation_history select | Audit read | Owner |
-| `POST /process` (or enqueue) | Accept async processing | JWT; ownership verified |
-| Worker claim (internal) | Dequeue work | Processor credentials |
+| Edge `screen-candidates` | Run/retry screening | JWT; verify ownership |
 
-### 8.3 Async Request / Response Flow
+### 8.3 Request / Response Flow
 
-**Upload + accept processing (per file or batch):**
+**Run Screening request (conceptual):** `{ job_id, candidate_ids? }`  
+**Response:** `{ accepted: true, results: [{ candidate_id, status, error_code? }] }`
 
-1. Client uploads file to Storage  
-2. Client inserts candidate (`uploaded`)  
-3. Client (or server) enqueues work → candidate `queued`  
-4. API returns **`202 Accepted`** with `{ candidate_id, status: "queued" }` — **no scores in response**  
-5. Resume Processing Service processes asynchronously  
-6. UI polls or subscribes for status until terminal  
-
-**Re-queue / retry (ST-01):** `{ job_id, candidate_ids? }` → validate → set eligible candidates to `queued` → **202 Accepted**.
-
-Validation: JWT; job owned and active; JD present; candidates belong to job; retry only from `failed_ai` (or failed enqueue).
+Validation: JWT present; job owned; job active; JD non-empty; candidates belong to job; statuses eligible (`pending` or `failed_ai`).
 
 ### 8.4 Authentication and Authorization
 
 | Step | Design |
 | --- | --- |
-| AuthN | User JWT on protected calls |
-| AuthZ | RLS for table access; processor re-checks job ownership before privileged reads/writes |
+| AuthN | User JWT on all protected calls |
+| AuthZ | RLS for table access; Edge Function re-checks job ownership before privileged reads/writes |
 | Client key | Anon key only |
 
 ### 8.5 Validation, Errors, Rate Limiting, Retry
 
 | Concern | Design |
 | --- | --- |
-| Validation | Client VR checks + server/processor enforcement |
-| Errors | Map to EH-*; safe messages; persist `failure_code` when terminal |
-| Rate limiting | Platform limits + bounded processor concurrency (numeric config deferred) |
-| AI retry | Transient Gemini backoff inside processor (SRS-NFR-007) |
+| Validation | Client VR checks + server/Edge enforcement |
+| Errors | Map to EH-* categories; safe messages |
+| Rate limiting | Rely on Supabase/Gemini platform limits; application bounded concurrency for batch AI |
+| Retry | Transient Gemini errors: bounded exponential backoff inside Edge Function (SRS-NFR-007); no infinite client loops |
 
 ### 8.6 Sequence Diagrams
 
-**Async happy path:**
+**Happy-path screening:**
 
 ```mermaid
 sequenceDiagram
   actor HR as HR User
   participant UI as SPA
-  participant ST as Storage
   participant DB as PostgreSQL
-  participant Q as Queue
-  participant RPS as Resume Processing Service
+  participant ST as Storage
+  participant EF as Edge Function
   participant G as Gemini
 
-  HR->>UI: Upload resumes
-  UI->>ST: Store file
-  UI->>DB: Insert candidate uploaded
-  UI->>Q: Enqueue
-  UI->>DB: Status queued
-  UI-->>HR: 202 Accepted
-  loop Poll / subscribe
-    UI->>DB: Read statuses
-  end
-  RPS->>Q: Claim work
-  RPS->>DB: Status parsing
-  RPS->>ST: Fetch resume
-  RPS->>RPS: Extract text
-  RPS->>DB: Status ai_processing
-  RPS->>G: Score + extract
-  G-->>RPS: JSON
-  RPS->>DB: Persist eval/profile + completed
-  UI->>DB: Rankings visible
+  HR->>UI: Create job + upload resumes
+  UI->>ST: Store files
+  UI->>DB: Insert candidates pending
+  HR->>UI: Run Screening
+  UI->>EF: screen-candidates(job_id)
+  EF->>DB: Verify ownership + load JD
+  EF->>ST: Fetch resume
+  EF->>EF: Parse text + extract
+  EF->>G: Evaluate
+  G-->>EF: JSON score/summary/fields
+  EF->>DB: History if needed + active eval + profile + status
+  UI->>DB: Query rankings
+  UI-->>HR: Ranked list
 ```
 
-**Upload compensation:**
+**Upload validation failure isolation:**
 
 ```mermaid
 sequenceDiagram
   participant UI as SPA
   participant ST as Storage
   participant DB as DB
-  UI->>ST: Upload OK
-  UI->>DB: Insert fails
-  UI->>ST: Delete object
-  Note over UI: No orphan storage; no candidate row
+  UI->>UI: Validate file A (ok)
+  UI->>ST: Upload A
+  UI->>DB: Candidate A pending
+  UI->>UI: Validate file B (bad type)
+  UI-->>UI: Reject B with EH-VAL
+  Note over UI: Continue remaining files
 ```
 
 ---
 
 ## 9. AI Processing Design
 
-Critical path for SF-04/SF-05 and SRS-AI-*, executed inside Resume Processing Service.
+Critical path implementing SF-04/SF-05 and SRS-AI-*.
 
 ### 9.1 Design Principles
 
-1. Secrets only in processor runtime (BR-05)  
-2. Human-in-the-loop (BR-02)  
+1. Edge-only Gemini (BR-05)  
+2. Human-in-the-loop (BR-02) — ranking/summary only  
 3. Schema validation gate for `completed` (SRS-AI-020–022)  
 4. One active evaluation; history on overwrite (BR-12)  
-5. Missing CE fields do not alone cause `failed_parse`  
-6. Fully async relative to HTTP upload/accept  
+5. Missing CE fields do not alone cause `failed_parse` (CE-R1/CE-R2)
 
-### 9.2–9.3 Canonical AI Pipeline
+### 9.2 Resume Processing Pipeline
 
 ```mermaid
 flowchart TD
-  A[Resume object] --> B[Text Extraction]
-  B --> C[Validation]
-  C -->|unusable| FP[failed_parse]
-  C -->|ok| D[Prompt Assembly]
-  D --> E[Gemini]
-  E --> F[JSON Validation]
-  F --> G[Score Validation]
-  G -->|pass| H[Persistence]
-  H --> I[completed]
-  F -->|fail| R{Retries left?}
-  G -->|fail| R
-  R -->|yes| E
-  R -->|no| FA[failed_ai]
+  A[Trigger screening] --> B[Load resume object]
+  B --> C{MIME PDF or DOCX?}
+  C -->|PDF| D[pdf-parse]
+  C -->|DOCX| E[mammoth]
+  D --> F{Text usable?}
+  E --> F
+  F -->|No| G[failed_parse]
+  F -->|Yes| H[Normalize / truncate]
+  H --> I[Candidate extraction + scoring pipeline]
 ```
 
-### 9.4 Candidate Extraction
+### 9.3 AI Pipeline
 
-Required CE-01–CE-09 attempted; optional CE-10–CE-14 when present; sparse fields allowed; persistence on `candidate_profile`. Prefer structured output in the same Gemini call as scoring.
+```mermaid
+flowchart TD
+  H[Normalized resume text + JD] --> P[Build prompt vN]
+  P --> G[Gemini generateStructured]
+  G --> V{Validate score schema?}
+  V -->|No| R{Retries left?}
+  R -->|Yes| G
+  R -->|No| FA[failed_ai]
+  V -->|Yes| X[Map CE fields]
+  X --> Y{Active eval exists?}
+  Y -->|Yes| Z[Write evaluation_history]
+  Y -->|No| S[Upsert active eval + profile]
+  Z --> S
+  S --> C[status completed]
+```
+
+### 9.4 Candidate Extraction Pipeline
+
+| Stage | Design |
+| --- | --- |
+| Source | Parsed resume text |
+| Method | Gemini structured output in same screening call (preferred for v1 cohesion) and/or light heuristic post-processors |
+| Required attempt | CE-01–CE-09 |
+| Optional | CE-10–CE-14 when present |
+| Persistence | `candidate_profile` upsert |
+| Failure policy | Sparse fields allowed; empty text still `failed_parse` |
+
+| Field ID | Storage Shape (logical) |
+| --- | --- |
+| CE-01 Name | string |
+| CE-02 Email | string |
+| CE-03 Phone | string |
+| CE-04 Skills | list/json |
+| CE-05 Education | list/json |
+| CE-06 Experience | list/json |
+| CE-07 Certifications | list/json |
+| CE-08 Projects | list/json |
+| CE-09 Resume Summary | text |
+| CE-10–14 Optional | strings/lists as applicable |
 
 ### 9.5 Prompt Construction and Versioning
 
-Prompt includes JD, resume text, JSON schema, extraction fields, scoring instructions. Store `prompt_version` in model_metadata. Final prompt text owned by RR-AI-008. Client never assembles production prompts.
+| Element | Design |
+| --- | --- |
+| Contents | JD, resume text, output JSON schema instructions, extraction field list, scoring rubric pointer |
+| Versioning | `prompt_version` string stored in model_metadata (e.g., `rr-score-extract-v1`) |
+| Change control | Prompt text owned by RR-AI-008; breaking schema changes bump version |
+| Client | Must not assemble production prompts |
 
-### 9.6 Gemini Integration and Validation
+### 9.6 Gemini Integration and Response Validation
 
-HTTPS from processor; API key in processor secrets; require numeric match_score ∈ [0,100]; non-empty rationale and summary; reject invalid JSON for `completed`.
+| Step | Design |
+| --- | --- |
+| Transport | HTTPS from Edge Function |
+| Auth | `GEMINI_API_KEY` secret |
+| Parse | JSON only; reject prose wrappers when possible |
+| Score gate | numeric ∈ [0,100] |
+| Text gates | non-empty rationale & summary |
+| On fail | retry transient; else `failed_ai` |
 
-### 9.7 Scoring / Ranking Behavior
+### 9.7 Scoring Logic and “Recommendation” Behavior
 
-No separate ML recommendation engine. Ranking = sort by active `match_score` descending. No separate confidence field; completion is binary via validation gates.
+v1 has **no separate ML recommendation engine**. Recommendation to HR is:
 
-**failed_ai overwrite policy:** On retry finalization with valid outputs, overwrite active after history capture. On `failed_ai` with no valid score payload, **retain prior active evaluation** (if any), set status `failed_ai`, set `failure_code`, and do not fabricate a score.
+1. Compute Gemini `match_score` against JD  
+2. Persist rationale/summary  
+3. Rank by active score descending in UI  
 
-### 9.8 Retry, Recovery, Audit
+This satisfies PRD ranking/explainability without undocumented recommender features.
+
+**Confidence handling:** v1 does **not** define a separate confidence score field. Completion confidence is binary via schema validation gates. Sparse extraction is visible to HR as empty fields rather than a confidence metric.
+
+### 9.8 Retry, Failure Recovery, Audit Logging
 
 | Topic | Design |
 | --- | --- |
-| Transient retry | Bounded backoff inside processor |
-| User retry | ST-01 / UC-10: `failed_ai` → `queued` |
-| Audit | History before successful overwrite |
-| Recovery | Partial batch success |
+| Transient retry | Bounded backoff inside Edge Function |
+| User retry | UC-10 on `failed_ai` only (Should) |
+| Overwrite | New result becomes active |
+| Audit | Prior active copied to history first |
+| Recovery | Partial batch success; siblings untouched |
+
+```mermaid
+flowchart TD
+  FA[failed_ai] --> Retry[User Retry]
+  Retry --> Proc[processing]
+  Proc --> Hist[Copy active to history if present]
+  Hist --> Run[Parse/AI again]
+  Run --> OK[completed]
+  Run --> FA2[failed_ai]
+```
 
 ### 9.9 Future AI Improvements
 
-OCR, alternate LLM providers, bias metrics, history comparison UI — future scope only.
+Documented only as future: OCR, alternate LLM providers, bias metrics, completed-candidate re-screen comparison UI (FS-03, FS-04, FS-07, FS-12). Not in v1 build scope.
 
 ---
 
 ## 10. Security Design
 
-Aligns to SRS §9/§13 and RR-ARCH-001 trust boundaries. Detailed control matrices expand in RR-SEC-009.
+Aligns to SRS §9/§13 and RR-ARCH-001 trust boundaries. Detailed threat matrix expands in RR-SEC-009.
 
-### 10.1–10.4 AuthN/AuthZ/Session/Validation
+### 10.1 Authentication
 
-Supabase Auth; protected routes; owner RLS; processor ownership checks; session refresh + sign-out; MIME/size validation; private storage.
+Supabase Auth; protected routes; session JWT on API calls (SRS-FR-001–003).
+
+### 10.2 Authorization
+
+Owner-based RLS; Edge Function ownership checks; no Hiring Manager roles in v1 (SRS-FR-044).
+
+### 10.3 Session Management
+
+Supabase client session refresh; sign-out clears client session (UC-02).
+
+### 10.4 File and Input Validation
+
+MIME allowlist PDF/DOCX; max size default 5MB; empty files rejected; JD/title required (VR-*).
 
 ### 10.5 OWASP Considerations (v1 Controls)
 
@@ -1012,28 +1084,41 @@ Supabase Auth; protected routes; owner RLS; processor ownership checks; session 
 | --- | --- |
 | Broken access control | RLS + ownership checks |
 | Sensitive data exposure | Private storage; no public resume URLs |
-| Injection | Parameterized SDK; validate AI JSON before persist |
+| Injection | Parameterized SDK/PostgREST; validate AI JSON before persist |
 | Security misconfiguration | `.env.example` without secrets; no service role in client |
-| XSS | React text rendering; **HTML escaping / safe rendering** of AI fields |
-| CSRF | Supabase JWT/bearer patterns |
-| SSRF | Processor fetches only Storage + Gemini endpoints |
+| XSS | React escaping; sanitize displayed AI text as text nodes |
+| CSRF | Prefer bearer/JWT patterns of Supabase client |
+| SSRF | Edge Function fetches only Storage + Gemini endpoints |
 
-### 10.6–10.9 Secrets, Encryption, Upload, Audit
+### 10.6 API Key and Secrets Management
 
-`GEMINI_API_KEY` and privileged keys only in Resume Processing Service secrets; TLS in transit; platform encryption at rest; private bucket + delete-on-compensate; evaluation history + audit logging.
+| Secret | Location |
+| --- | --- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Vercel env (publishable) |
+| `GEMINI_API_KEY` | Edge Function secrets |
+| Service role key | Edge secrets only; never `VITE_` |
 
-### 10.10 Threat Model (Expanded)
+### 10.7 Encryption
+
+TLS in transit (HTTPS). Encryption at rest via Supabase/Vercel platform defaults. No custom field-level encryption in v1 beyond platform.
+
+### 10.8 Secure File Upload
+
+Private bucket; authz policies; server-side type verification where possible; paths namespaced by `user_id/job_id/`.
+
+### 10.9 Audit Logging
+
+Evaluation history + Edge structured logs for screening events.
+
+### 10.10 Threat Model (Summary)
 
 | Threat | Mitigation |
 | --- | --- |
 | Stolen anon key | RLS still enforces ownership |
-| Privileged key leak | Processor-only secrets; rotate via platform |
+| Gemini key leak | Edge-only; rotate via platform |
 | Cross-user data read | RLS + tests |
-| Malicious upload | Type/size limits; private storage; parse in processor |
-| **Prompt injection** via resume/JD text | Treat content as untrusted; fixed schema; no tool calling; allowlisted output fields |
-| Schema / output tampering | **JSON schema validation** + **score validation** before `completed` |
-| XSS via AI text | **Safe rendering** / no `dangerouslySetInnerHTML` for AI fields |
-| Prompt abuse | Authz on enqueue; owner-only jobs |
+| Malicious upload | Type/size limits; private storage; parse in Edge |
+| Prompt abuse | Authz on screening; owner-only jobs |
 
 ### 10.11 Security Boundary Diagram
 
@@ -1046,22 +1131,18 @@ flowchart TB
     Auth[Auth]
     RLS[Postgres RLS]
     ST[Private Storage]
+    EF[Edge Functions]
   end
-  subgraph ProcessorZone["Resume Processing Service Zone"]
-    RPS[Processor runtime]
-    Keys[GEMINI_API_KEY / privileged creds]
-  end
-  subgraph AIZone["AI Zone"]
+  subgraph SecretZone["Secret Zone"]
+    Keys[GEMINI_API_KEY / service role]
     Gemini[Gemini API]
   end
   SPA --> Auth
   SPA --> RLS
   SPA --> ST
-  SPA -->|202 enqueue| RPS
-  RPS --> Keys
-  RPS --> Gemini
-  RPS --> RLS
-  RPS --> ST
+  SPA --> EF
+  EF --> Keys
+  EF --> Gemini
 ```
 
 ---
@@ -1070,36 +1151,44 @@ flowchart TB
 
 ### 11.1 Environments
 
-| Env | Frontend | Data | Processor |
-| --- | --- | --- | --- |
-| Development | Vite local | Supabase local/shared | Local processor host |
-| Preview | Vercel Preview | Isolated/shared Supabase project | Deployed processor |
-| Production | Vercel Production | Supabase Production | Deployed processor |
+| Env | Frontend | Backend |
+| --- | --- | --- |
+| Development | Vite local | Supabase local or shared project |
+| Preview | Vercel Preview | Shared/branch Supabase |
+| Production | Vercel Production | Supabase Production |
 
 ### 11.2 Deployment Diagram
 
 ```mermaid
 flowchart LR
   Dev[Developer] --> GH[GitHub]
-  GH --> Vercel[Vercel SPA]
-  GH --> Proc[Resume Processing Service host]
+  GH --> Vercel[Vercel Build]
   Vercel --> Users[HR Users]
   Users --> SB[Supabase]
-  Proc --> SB
-  Proc --> Gemini[Gemini]
+  SB --> EF[Edge Functions]
+  EF --> Gemini[Gemini]
 ```
 
 ### 11.3 Pipeline and Rollback
 
-Release order: migrations (RR-DB-005) → processor deploy → frontend. Rollback: revert Vercel + processor revision; DB down-migrations only with reviewed scripts. Prefer separate Supabase projects for preview vs production.
+| Step | Design |
+| --- | --- |
+| Build | Vercel builds Vite app on PR/main |
+| Migrations | Controlled `supabase db push`/CI migration apply |
+| Functions | Deploy `screen-candidates` with secrets |
+| Rollback | Revert Vercel deployment; migrate down only with reviewed scripts; keep DB backups via platform |
 
 ### 11.4 Environment Variables
 
-Public: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Processor secrets: `GEMINI_API_KEY`, privileged DB creds. Operational knobs (retries, concurrency, upload max) documented in env examples; **numeric defaults finalized with RR-DB-005 / Deployment Guide**.
+| Class | Examples |
+| --- | --- |
+| Public | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
+| Edge secrets | `GEMINI_API_KEY`, service role |
+| Limits | `MAX_UPLOAD_MB=5`, `GEMINI_MODEL`, `AI_MAX_RETRIES`, `PROMPT_VERSION` |
 
 ### 11.5 Networking
 
-HTTPS for preview/production. Browser → Vercel + Supabase. Processor → Storage + DB + Gemini.
+HTTPS only for preview/production. Browser talks to Vercel origin and Supabase project URL. Edge talks to Gemini HTTPS API.
 
 ---
 
@@ -1107,12 +1196,13 @@ HTTPS for preview/production. Browser → Vercel + Supabase. Processor → Stora
 
 | Type | Design |
 | --- | --- |
-| Audit Logging | `evaluation_history`; screening audit events with job/candidate/prompt_version |
-| Platform Logging | Vercel / Supabase / processor host logs |
-| Application Logging | SPA error boundaries; processor structured errors with EH category |
-| Performance | Platform analytics; optional timing fields in processor logs |
-| Alerting | Manual/platform for demo; not mandatory PagerDuty in v1 |
-| Retention | Platform defaults + DB history for MBA evidence |
+| Application logging | Client error boundaries + console/reporting for UI failures |
+| Audit logging | `evaluation_history` rows; screening event logs with job_id/candidate_id/prompt_version |
+| AI logging | Model name, latency, retry count, validation pass/fail (no full prompt dump in client logs) |
+| Error logging | Edge Function structured errors with EH category |
+| Performance monitoring | Vercel analytics (platform); optional timing fields in Edge logs |
+| Alerting | Manual/platform alerts for demo; no mandatory PagerDuty in v1 |
+| Retention | Platform log retention defaults; DB history retained for demo/MBA evidence |
 
 ---
 
@@ -1120,51 +1210,57 @@ HTTPS for preview/production. Browser → Vercel + Supabase. Processor → Stora
 
 | Goal | Tactic |
 | --- | --- |
-| SRS-NFR-009 | Lean list/analytics queries (physical tuning in RR-DB-005) |
-| Large uploads | Per-file upload; configured size cap |
-| Batch processing | **Async** processor; UI never waits on Gemini in upload HTTP |
-| Parallel AI | Bounded concurrency in processor |
-| Pagination | Candidate table pagination (Should) |
-| Lazy loading | Route-level code splitting |
-
-### 13.1 Polling Strategy
-
-| Rule | Design |
-| --- | --- |
-| Mechanism | UI **polls** candidate/job status queries; optional Realtime subscribe later |
-| Interval | Start ~2–3s while any non-terminal statuses exist |
-| Backoff | Increase interval after repeated unchanged polls (e.g., up to ~10–15s) |
-| Terminal states | Stop when all job candidates are in `{completed, failed_parse, failed_ai, archived}` or user navigates away |
-| Cancellation | Abort polling on unmount/route change; do not cancel in-flight processor work except via future explicit cancel API (not in v1) |
-| ST-01 | User may re-queue `failed_ai` without blocking UI |
+| SRS-NFR-009 | Indexed list queries; minimal dashboard payload |
+| Large uploads | Per-file upload; 5MB default cap; progress UI |
+| Batch processing | Async Edge execution; UI polling/refetch of statuses |
+| Parallel AI requests | Bounded concurrency (design default: low single-digit parallelism) to protect quotas |
+| DB optimization | Indexes in §7.4; select only needed columns for tables |
+| Caching | §7.5 |
+| Pagination | Candidate table pagination/progressive load (SRS-FR-032 Should) |
+| Lazy loading | Route-level code splitting for dashboard/job/analytics pages |
 
 ---
 
 ## 14. Scalability Design
 
-| Dimension | v1 Design | Future |
+| Dimension | v1 Design | Future Enterprise |
 | --- | --- | --- |
-| Horizontal | Vercel CDN; processor replicas on chosen host | Queue workers |
-| Database/storage growth | Indexes/views in RR-DB-005; archive jobs | Tenancy/partitions |
-| AI scaling | Bounded concurrency + async queue | Multi-provider / dedicated workers |
-| Multi-company | Not in v1 | FS-02 |
-
-Chunking large batches across multiple processor invocations is an **operations concern** specified with RR-DB-005 / Deployment Guide, not hard-coded here.
+| Horizontal | Vercel CDN instances; Supabase managed scale | Dedicated API tier |
+| Vertical | Platform plan upgrades | Larger DB compute |
+| Database growth | Indexes + archive jobs | Partitioning/tenancy |
+| Storage growth | Per-user prefixes; private bucket | Lifecycle policies |
+| API scaling | PostgREST + Edge | Queue workers |
+| AI scaling | Bounded concurrency + retries | Async job queue + multi-provider |
+| Multi-company | Not in v1 | FS-02 orgs/RBAC |
 
 ---
 
 ## 15. Error Handling Strategy
 
-Map failures to EH categories. UI shows actionable category/`failure_code` without secrets.
+### 15.1 Global Approach
+
+Map failures to EH categories from SRS §18. UI shows actionable category messages without secrets/stack traces.
+
+### 15.2 By Layer
 
 | Layer | Strategy |
 | --- | --- |
 | Global UI | Error boundary + toast/inline alerts |
-| Upload | Compensation §6.5.1; continue batch |
+| API/PostgREST | Translate 401/403/409/422 to EH-AUTH/FORB/VAL |
+| Upload | Per-file EH-VAL/EH-STORE; continue batch |
 | Parsing | `failed_parse`; continue siblings |
-| AI | Retry then `failed_ai`; retain prior active if no valid score |
-| Database | No false `completed` |
-| Retry/Recovery | ST-01 for AI; re-upload new candidate for parse failures |
+| AI | Retry then `failed_ai` |
+| Database | Abort unit of work; leave candidate in failure status not false `completed` |
+| Retry/Recovery | UC-10 for AI; re-upload new candidate for parse failures |
+
+### 15.3 Retry Strategy
+
+| Failure | Retry |
+| --- | --- |
+| Transient Gemini/network | Automatic bounded backoff in Edge |
+| Persistent schema invalid | Count toward AI failure budget → `failed_ai` |
+| User retry | Explicit on `failed_ai` |
+| Upload/storage | User re-attempt file |
 
 ---
 
@@ -1172,24 +1268,35 @@ Map failures to EH categories. UI shows actionable category/`failure_code` witho
 
 | ID | Decision | Reason | Alternative | Trade-offs |
 | --- | --- | --- | --- | --- |
-| DD-01 | SPA + Supabase + async Resume Processing Service | Protect secrets; non-blocking UX; portable runtime | Sync Edge-only screening | Extra deployable vs coupling |
-| DD-02 | HTTP **202 Accepted** + queue; UI poll/subscribe | SRS-NFR-011; remove sync batch completion | Sync results in upload response | Slightly more UI complexity |
-| DD-03 | Runtime-independent processor host | Avoid Deno/Edge parser lock-in | Bind to Edge Functions | Host choice deferred |
-| DD-04 | Refined status lifecycle (§6.7) | Observability of async stages | Coarse pending/processing only | More states to implement/test |
-| DD-05 | Upload compensation (delete object if DB fails) | No orphan files | Best-effort ignore | Extra delete call |
-| DD-06 | Merge Dashboard + Reporting → Analytics | Cohesion; SF-07 single owner | Two modules | — |
-| DD-07 | Combined Gemini extract+score call | Fewer round trips | Separate calls | Larger prompts |
-| DD-08 | Retain prior active on `failed_ai` without valid score | Avoid fabricated scores | Overwrite with empty stub | Clearer audit semantics |
-| DD-09 | Logging = Audit + Platform + Application | Clear responsibilities | Single Logging Service | — |
-| DD-10 | Physical indexes/paths/chunk/retry numbers in RR-DB-005 | Keep SDD architectural | Inline physical specs | DB doc must complete them |
-| DD-11 | ST-01 required; ST-02 optional auto-enqueue | Explicit control | Auto-only | Extra click vs races |
-| DD-12 | Ranking = sort by score | PRD/SRS | ML re-ranker | Explainable |
+| DD-01 | SPA + Supabase + Edge AI | Matches ADR-001/004; protects secrets | Custom Node API | Platform coupling vs speed |
+| DD-02 | Explicit Run Screening (ST-01) + optional auto-start (ST-02) | SRS normative trigger clarity | Auto-only | Extra click vs control |
+| DD-03 | Combined Gemini call for score+extraction | Fewer round trips; cohesive schema | Separate extract then score calls | Larger prompts vs latency/cost |
+| DD-04 | Active evaluation table + history table | SRS-FR-051–053 | Append-only versions as active via flag only | Clear active read path; extra write |
+| DD-05 | Job archive soft-delete; hard delete if empty | SRS-FR-046/047; BR-11 | Cascade hard delete | Safer demos; less storage reclaim |
+| DD-06 | No separate confidence score | Not in SRS | Add confidence field | Less metrics; simpler validation |
+| DD-07 | Ranking = sort by score | PRD/SRS ranking | ML re-ranker | Explainable; no undocumented ML |
+| DD-08 | Bounded parallel Gemini | NFR performance + quotas | Fully serial / unlimited parallel | Throughput vs rate limits |
+| DD-09 | Client uses anon key only | SRS-SEC / NFR-003 | Service role in client | Security mandatory |
+| DD-10 | Parsers Edge-side | Consistent with secret/file access | Browser parsing | Heavier Edge CPU; better control |
+| DD-11 | Minimal Administration module | SRS operator model | Full admin console | Less scope creep |
+| DD-12 | Analytics via SQL aggregates | SF-07 | External BI | Simpler v1 |
 
 ---
 
 ## 17. Future Enhancements
 
-Unchanged scope deferrals: OCR, ATS, email, interview scheduling, multi-company, HM RBAC, advanced analytics, bias detection (FS-*). Not v1 design commitments.
+Mapped to SRS/PRD future scope — **not v1 design commitments**:
+
+| Enhancement | SRS/PRD Ref | Design Impact When Promoted |
+| --- | --- | --- |
+| OCR | FS-03 | New parser adapter |
+| ATS integration | FS-08 | New ingestion API boundary |
+| Email notifications | FR-43 Won't now | Notification service |
+| Interview scheduling | PRD out of scope | New module |
+| Multi-company support | FS-02 | Tenancy + RLS redesign |
+| RBAC / Hiring Manager | FS-01 / FR-44 | AuthZ model expansion |
+| Advanced analytics | FS-10 | Event warehouse |
+| Bias detection | FS-07 | Ethics metrics + data policy |
 
 ---
 
@@ -1197,69 +1304,86 @@ Unchanged scope deferrals: OCR, ATS, email, interview scheduling, multi-company,
 
 ### 18.1 Summary
 
-SDD v1.1 refines ResumeRank AI into an **asynchronous, runtime-portable** design: SPA uploads and receives **202 Accepted**, Resume Processing Service performs parse→AI→persist off the request path, UI polls for status, Analytics owns SF-07, and physical DB mechanisms are deferred to RR-DB-005. Business rules BR-01–BR-12 and SRS Must capabilities remain intact.
+This SDD converts ResumeRank AI’s approved architecture and SRS v1.1.0 into an implementation-ready design: layered SPA, Supabase platform services, Edge Screening Engine, structured extraction, Gemini scoring with validation, active evaluation plus audit history, archive-first job lifecycle, and human-in-the-loop ranking/analytics.
 
-### 18.2 Requirements Satisfaction (Representative)
+### 18.2 Requirements Satisfaction Matrix (Representative)
 
-| Area | Satisfied By |
+| Requirement Area | Satisfied By |
 | --- | --- |
-| SF-01 Auth | §6.2, §10 |
-| SF-02 Jobs | §6.4, §7 |
-| SF-03 Upload + async accept | §6.5, §8.3 |
-| SF-04/05 Parse + AI | §6.6, §9 |
-| SF-06 Ranking + progress | §6.8, §13.1 |
-| SF-07 Analytics | §6.3 |
-| SF-08 Status/resilience | §6.7, §15 |
-| Security / Performance NFRs | §10, §13–14 |
+| SF-01 Auth | §5 Auth, §6.2, §10 |
+| SF-02 Jobs + archive/delete | §6.4, §7.8 |
+| SF-03 Upload | §6.5, §8.6 |
+| SF-04 Parse + CE extraction | §6.6, §9.2–9.4 |
+| SF-05 AI score/summary/retry/audit | §6.7, §9 |
+| SF-06 Ranking | §6.8 |
+| SF-07 Analytics | §6.3, §6.9 |
+| SF-08 Status/resilience | §6.7 lifecycle, §15 |
+| Security NFRs | §10 |
+| Performance/scale NFRs | §13, §14 |
+| BR-01–BR-12 | Enforced across modules; unchanged |
 
 ### 18.3 Handoff
 
-**RR-DB-005 Database Design Document** is next and must specify: refined status enum, `failure_code`, one-active evaluation enforcement, indexes, storage paths, analytics views, and operational numeric defaults referenced by this SDD.
+Next design artifact: **RR-DB-005 Database Design Document**, refining §7 into physical schema, RLS policies, and migrations.
 
 ---
 
-## 19. Architecture Review Report (v1.1)
+## 19. Design Review Report
 
-### 19.1 Verification Against Prior Critical/Major Findings
+Performed after completing RR-SDD-004 v1.0.0 against RR-ARCH-001, RR-PRD-002, and RR-SRS-003 v1.1.0.
 
-| Prior Issue | v1.1 Disposition |
-| --- | --- |
-| Sync screening response | **Fixed** — 202 + async queue + poll |
-| Edge/Deno parser binding | **Fixed** — Resume Processing Service runtime-independent |
-| Upload orphan risk | **Fixed** — compensation flow §6.5.1 |
-| Dashboard/Reporting duplication | **Fixed** — Analytics Module |
-| Logging Service sprawl | **Fixed** — Audit/Platform/Application |
-| Missing failure codes / progress | **Addressed** — `failure_code` + Job Screening Progress + lifecycle |
-| Physical DB detail in SDD | **Deferred** — RR-DB-005 |
-| Threat model gaps | **Expanded** — prompt injection, schema/output validation, safe rendering |
-| Polling underspecified | **Specified** — §13.1 |
-
-### 19.2 Fresh Review Checklist
+### 19.1 Review Summary
 
 | Area | Assessment |
 | --- | --- |
-| Scalability | Pass for demo profile — async queue + bounded concurrency; chunk numeric defaults deferred |
-| Modularity | Pass — fewer peer services; Analytics merged; processor stages cohesive |
-| Async workflow | Pass — 202 accept, queue claim, poll/subscribe, no sync score return |
-| AI pipeline | Pass — canonical extract→validate→prompt→Gemini→JSON→score→persist |
-| Deployment | Pass — SPA + processor + Supabase; host choice open |
-| Maintainability | Pass — runtime abstraction; physical details not frozen incorrectly |
-| Business rules | Pass — BR-01–BR-12 unchanged; `failed_parse` retained |
-| Coupling | Pass — UI does not call Gemini; processor owns AI |
+| Design consistency | Pass — aligns with architecture ADRs and SRS status/evaluation rules |
+| Module cohesion | Pass — modules map cleanly to SF-01–SF-08 |
+| Coupling | Pass with note — Screening Engine concentrates parse/AI/persist (intentional); UI decoupled from Gemini |
+| Security | Pass — trust boundaries and secret placement correct |
+| Performance | Pass for demo profile — bounded AI concurrency specified |
+| Scalability | Pass for v1 — enterprise multi-tenant deferred |
+| Undocumented features | Pass — no OCR/HM RBAC/auto-reject/ATS invented as v1 |
+| Business rules | Pass — BR-01–BR-12 preserved |
 
-### 19.3 Residual Recommendations for RR-DB-005
+### 19.2 Missing Components Check
+
+| Item | Status |
+| --- | --- |
+| Auth, Jobs, Upload, Parse, AI, Rank, Analytics | Present |
+| Archive/Delete, Retry/Audit, CE extraction | Present |
+| Full in-app Administration console | Correctly **excluded** per SRS |
+| Separate Recommendation Engine | Correctly modeled as score-ranking, not new engine |
+| Confidence score field | Correctly **not invented** |
+
+### 19.3 Diagram Completeness
+
+| Required Diagram | Present |
+| --- | --- |
+| System / high-level / layered / component | Yes |
+| Sequence diagrams | Yes |
+| ER diagram | Yes |
+| Candidate lifecycle | Yes |
+| Resume + AI pipelines | Yes |
+| Deployment | Yes |
+| Security boundary | Yes |
+| Folder structure | Yes |
+
+### 19.4 Recommendations Before Database Design (RR-DB-005)
 
 | ID | Recommendation | Priority |
 | --- | --- | --- |
-| DR-11 | Encode status enum including refined states + `failed_parse` + `archived` | High |
-| DR-12 | Enforce one-active evaluation uniqueness | High |
-| DR-13 | Define storage path policy + RLS for history | High |
-| DR-14 | Define queue table/mechanism (DB queue vs external) | High |
-| DR-15 | Publish defaults: upload max MB, AI retries, poll guidance alignment | Medium |
+| DR-01 | In RR-DB-005, finalize whether `evaluation_active` is a dedicated table or `evaluations.is_active` with unique partial index — preserve one-active invariant | High |
+| DR-02 | Specify exact RLS policies for `evaluation_history` and storage path conventions `user_id/job_id/` | High |
+| DR-03 | Decide JSON schemas for skills/education/experience arrays to stabilize CE persistence | High |
+| DR-04 | Document Edge Function timeout vs batch size; may require chunked invocation for large batches | Medium |
+| DR-05 | Confirm whether ST-02 auto-start is enabled by default in UX (allowed by SRS as May) | Medium |
+| DR-06 | Add migration strategy for prompt_version and model_metadata columns | Medium |
+| DR-07 | In RR-API-006, specify idempotency keys for screening requests | Medium |
+| DR-08 | Ensure PRD minor revision later acknowledges extraction + archive/delete (already in SRS v1.1) for doc suite consistency | Low |
 
-### 19.4 Verdict
+### 19.5 Review Verdict
 
-**RR-SDD-004 v1.1.0 is approved as the architectural baseline for Database Design (RR-DB-005).** Critical sync/runtime defects from the Principal review are remediated. Remaining work is physical schema and operational numerics—not open product scope.
+**Approved to proceed to Database Design Document (RR-DB-005)** after acknowledging DR-01–DR-03 as inputs to that document. No SDD-blocking defects identified relative to SRS v1.1.0.
 
 ---
 
@@ -1269,25 +1393,24 @@ SDD v1.1 refines ResumeRank AI into an **asynchronous, runtime-portable** design
 
 | Term | Definition |
 | --- | --- |
-| HTTP 202 Accepted | Async acceptance; processing continues after response |
-| Resume Processing Service | Runtime-independent worker for parse/AI/persist |
-| Queued | Candidate accepted for async processing |
 | Active Evaluation | Sole current evaluation for a candidate |
-| Audit Logging | History + screening audit events |
-| Platform Logging | Host/infrastructure logs |
-| Application Logging | App/processor structured logs |
-| Safe Rendering | Display AI text without HTML injection |
+| Evaluation Audit History | Snapshots of prior active evaluations |
+| Screening Engine | Edge Function orchestrating parse/extract/AI/persist |
+| Candidate Profile | Persisted CE-01–CE-14 fields |
+| Job Lifecycle Status | `active` or `archived` |
+| Bounded Concurrency | Limited parallel Gemini calls during batch screening |
 
-### Appendix B — SRS Feature Traceability
+### Appendix B — SRS Feature Traceability to SDD Chapters
 
 | SRS Feature | SDD Chapters |
 | --- | --- |
-| SF-01 | §6.2, §10 |
-| SF-02 | §6.4, §7 |
-| SF-03 | §6.5, §8 |
-| SF-04/05 | §6.6–6.7, §9 |
-| SF-06 | §6.8, §13.1 |
-| SF-07 | §6.3 |
+| SF-01 | §5, §6.2, §10 |
+| SF-02 | §5, §6.4, §7 |
+| SF-03 | §5, §6.5, §8 |
+| SF-04 | §6.6, §9 |
+| SF-05 | §6.7, §9 |
+| SF-06 | §6.8 |
+| SF-07 | §6.3, §6.9 |
 | SF-08 | §6.7, §15 |
 
 ### Appendix C — Document Control
@@ -1295,27 +1418,10 @@ SDD v1.1 refines ResumeRank AI into an **asynchronous, runtime-portable** design
 | Item | Value |
 | --- | --- |
 | Path | `docs/02-design/04-System-Design-Document.md` |
-| Version | 1.1.0 |
+| Version | 1.0.0 |
 | Upstream | RR-ARCH-001 v2.0.0; RR-PRD-002 v1.0.0; RR-SRS-003 v1.1.0 |
 | Next | RR-DB-005 Database Design Document |
 
-### Appendix D — v1.1 Change Summary
-
-| ID | Change |
-| --- | --- |
-| C-01 | Async screening: upload → persist → **202** → queue → status updates → UI poll |
-| C-02 | Abstracted **Resume Processing Service** (Edge/Node/serverless) |
-| C-03 | Refined candidate status lifecycle + Mermaid state diagram |
-| C-04 | Upload compensation flow |
-| C-05 | Merged Dashboard/Reporting → Analytics |
-| C-06 | Replaced Logging Service with Audit/Platform/Application logging |
-| C-07 | Clarified canonical AI pipeline |
-| C-08 | Expanded threat model (prompt injection, schema/output validation, safe rendering) |
-| C-09 | Specified polling interval/backoff/terminals/cancellation |
-| C-10 | Deferred physical DB/ops numerics to RR-DB-005 |
-| C-11 | Simplified component catalog; high cohesion / low coupling |
-| C-12 | Re-ran architecture review; baseline for DB design |
-
 ---
 
-**End of Document — Document 04 — RR-SDD-004 — System Design Document v1.1.0**
+**End of Document — Document 04 — RR-SDD-004 — System Design Document v1.0.0**
