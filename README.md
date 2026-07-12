@@ -51,4 +51,6 @@ Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 ## Status
 
-Documentation suite complete (RR-DOC-000 through RR-MBA-013). Next: implement per Developer/Deployment guides and insert MBA Chapter 15 screenshots.
+Documentation suite complete (RR-DOC-000 through RR-MBA-013).
+
+**Implementation:** Phase 1 (project setup) — SPA scaffold under [`apps/web`](./apps/web). Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md) phases next.
