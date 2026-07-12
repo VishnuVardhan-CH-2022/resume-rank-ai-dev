@@ -14,8 +14,9 @@
 | **Document Title** | Database Design Document |
 | **Document Number** | Document 05 |
 | **Document ID** | RR-DB-005 |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Status** | Baseline — Ready for API Design |
+| **Supersedes** | RR-DB-005 v1.0.0 |
 | **Classification** | Internal — MBA Final Year Project |
 | **Specialization** | Artificial Intelligence & Data Science |
 | **Document Type** | Database Design (PostgreSQL / Supabase) |
@@ -45,7 +46,8 @@ This is a **design** document: it does not contain `CREATE TABLE` SQL, migration
 | Version | Date | Author | Description of Change | Review Status |
 | --- | --- | --- | --- | --- |
 | 0.1.0 | 12 July 2026 | Vish Var | Outline from SDD v1.1 data interaction design | Draft |
-| 1.0.0 | 12 July 2026 | Vish Var | Complete database design with ER diagrams, entity/table specs, lifecycles, transactions, and DB architecture review | Current |
+| 1.0.0 | 12 July 2026 | Vish Var | Complete database design with ER diagrams, entity/table specs, lifecycles, transactions, and DB architecture review | Superseded |
+| 1.1.0 | 12 July 2026 | Vish Var | Architecture review remediation: authoritative candidate status lifecycle (supersedes SRS simplified enum), frozen active evaluation design, analytics view contracts, operational defaults, queue uniqueness, PII classification, storage path, retention/delete/ER clarifications | Current |
 
 ---
 
@@ -70,6 +72,13 @@ This is a **design** document: it does not contain `CREATE TABLE` SQL, migration
 17. [Database Architecture Review](#17-database-architecture-review)
 18. [Appendices](#18-appendices)
 
+### Appendix Index
+
+- A — Status Mapping (SRS Simplified → Authoritative)
+- B — Open Items for API Design
+- C — Change Log (v1.0.0 → v1.1.0)
+- D — Document Control
+
 ---
 
 ## List of Figures
@@ -92,12 +101,16 @@ This is a **design** document: it does not contain `CREATE TABLE` SQL, migration
 | Table | Title | Section |
 | --- | --- | --- |
 | T-01 | Entity inventory | §4.1 |
-| T-02 | Status enum values | §4.3 |
+| T-02 | Authoritative candidate status enum | §4.4 |
 | T-03 | CE field mapping to profile columns | §5.4 |
 | T-04 | Relationship cardinality summary | §6.2 |
 | T-05 | Cascade / delete behavior | §6.3 |
 | T-06 | Database design decisions | §14 |
 | T-07 | Architecture review findings | §17 |
+| T-08 | Analytics view contracts | §10.6 |
+| T-09 | Operational defaults (design-level) | §10.7 |
+| T-10 | Data classification | §11.1 |
+| T-11 | Retention guidance | §7.6 |
 
 ---
 
@@ -180,7 +193,7 @@ Define a production-oriented database design for ResumeRank AI that stores jobs,
 | CO-DB-03 | No auto-reject/hire side effects in schema | BR-02 |
 | CO-DB-04 | Hard delete job only when zero candidates | SRS-FR-047 |
 | CO-DB-05 | Match score numeric 0–100 when completed | SRS-FR-019 |
-| CO-DB-06 | Status set per SDD v1.1 lifecycle | SDD §6.7 |
+| CO-DB-06 | Status set per **authoritative candidate lifecycle** (this DDD §4.4; SDD §6.7). Supersedes SRS simplified five-state enum for persistence | SDD §6.7; DDD v1.1 |
 
 ---
 
@@ -241,10 +254,10 @@ All child rows reference parents via foreign keys. Candidates require jobs; eval
 
 | Concern | Approach |
 | --- | --- |
-| Active evaluation | At most one active evaluation per candidate |
+| Active evaluation | At most **one** row in `evaluations` per candidate (the active evaluation) |
 | Status vs evaluation | `completed` only when active evaluation satisfies score/rationale/summary rules |
 | Upload compensation | DB design supports delete of resume_files metadata when storage compensate occurs |
-| Async processing | Queue + status fields are source of truth for progress |
+| Async processing | Queue + status fields are source of truth for progress; **one open** queue entry per candidate |
 
 ### 2.8 Scalability and Maintainability
 
@@ -281,9 +294,9 @@ erDiagram
   JOBS ||--o{ CANDIDATES : contains
   CANDIDATES ||--|| RESUME_FILES : has
   CANDIDATES ||--o| CANDIDATE_PROFILES : has
-  CANDIDATES ||--o| EVALUATIONS : active
+  CANDIDATES ||--o| EVALUATIONS : "one active"
   CANDIDATES ||--o{ EVALUATION_HISTORY : history
-  CANDIDATES ||--o{ PROCESSING_QUEUE : work
+  CANDIDATES ||--o{ PROCESSING_QUEUE : "≤1 open"
   CANDIDATES ||--o{ AUDIT_LOGS : events
   PROFILES ||--o{ AUDIT_LOGS : actor
 
@@ -340,13 +353,12 @@ erDiagram
   }
   EVALUATIONS {
     uuid id PK
-    uuid candidate_id FK
+    uuid candidate_id FK_UK
     uuid job_id FK
     numeric match_score
     text rationale
     text summary
     jsonb model_metadata
-    boolean is_active
     timestamptz evaluated_at
   }
   EVALUATION_HISTORY {
@@ -392,10 +404,10 @@ Physical PostgreSQL mapping intent (no DDL):
 | Candidate | `candidates` | Status enum per SDD §6.7 |
 | Resume file | `resume_files` | 1:1 with candidate in v1 |
 | Candidate profile | `candidate_profiles` | PK = `candidate_id` |
-| Active evaluation | `evaluations` where `is_active = true` | Enforce one active per candidate at implementation |
-| Evaluation history | `evaluation_history` | Append-only snapshots |
-| Processing queue | `processing_queue` | Claim/lock fields for workers |
-| Audit logs | `audit_logs` | Operational screening/audit events |
+| Active evaluation | `evaluations` | **Frozen:** one active evaluation row per candidate |
+| Evaluation history | `evaluation_history` | Append-only prior evaluation snapshots |
+| Processing queue | `processing_queue` | Claim/lock fields; **one open entry** per candidate |
+| Audit logs | `audit_logs` | Operational screening/audit events (no raw PII) |
 
 ```mermaid
 erDiagram
@@ -403,13 +415,14 @@ erDiagram
   jobs ||--o{ candidates : job_id
   candidates ||--|| resume_files : candidate_id
   candidates ||--o| candidate_profiles : candidate_id
-  candidates ||--o{ evaluations : candidate_id
+  candidates ||--o| evaluations : "candidate_id UK — one active"
   candidates ||--o{ evaluation_history : candidate_id
   candidates ||--o{ processing_queue : candidate_id
   candidates ||--o{ audit_logs : candidate_id
   profiles ||--o{ audit_logs : actor_user_id
 ```
 
+**Physical annotations:** `evaluations.candidate_id` is conceptually unique (one active evaluation). `processing_queue` may have many historical rows; at most one **open** row (`pending` or `locked`) per candidate. `resume_files.candidate_id` unique (1:1).
 ---
 
 ## 4. Entity Design
@@ -465,23 +478,40 @@ erDiagram
 | Primary Key | `id` UUID |
 | Foreign Keys | `job_id` → jobs |
 | Relationships | 1:1 resume_files; 0..1 profile; 0..1 active evaluation; 0..N history/queue/audits |
-| Business Rules | BR-04, BR-06, BR-08; status lifecycle SDD §6.7 |
+| Business Rules | BR-04, BR-06, BR-08; **authoritative status lifecycle** §4.4.1 |
 | Lifecycle | See §7.2 |
-| Validation | Status ∈ allowed enum; failure fields when failed_* |
+| Validation | Status ∈ authoritative enum; failure fields when `failed_parse` / `failed_ai` |
 
-**Candidate status enum (SDD v1.1) — Table T-02:**
+### 4.4.1 Authoritative Candidate Status Lifecycle
 
-| Status | Meaning |
+**Authority:** This section defines the **sole authoritative** candidate `status` vocabulary for persistence, processing, polling, and analytics.
+
+It is aligned to RR-SDD-004 v1.1 §6.7 and **supersedes** the earlier simplified SRS model (`pending`, `processing`, `completed`, `failed_parse`, `failed_ai` as the only DB-constrained set in SRS-DB-014 / VR-20 / CSL-01). SRS coarse labels remain valid for product language via the mapping in Appendix A; they are **not** stored as the refined intermediate states.
+
+**Authoritative statuses (T-02):**
+
+| Status | Meaning | Terminal for processing? |
+| --- | --- | --- |
+| `uploaded` | Candidate + storage persisted; not yet queued | No |
+| `queued` | Accepted for async processing (HTTP 202 path) | No |
+| `parsing` | Text extraction in progress | No |
+| `parsed` | Text extraction succeeded | No |
+| `ai_processing` | Gemini evaluation in progress | No |
+| `completed` | Valid active evaluation persisted | Yes |
+| `failed_parse` | Unusable/empty text; inspectable (SRS-FR-016; retained per SDD) | Yes |
+| `failed_ai` | AI/validation failed; prior active evaluation retained if any | Yes |
+| `archived` | Soft-archived with job/candidate archive; blocks new processing | Yes for processing |
+
+**Supersession notes:**
+
+| Prior SRS rule | Authoritative DDD/SDD rule |
 | --- | --- |
-| `uploaded` | Candidate row persisted; not yet queued |
-| `queued` | Work item accepted for async processing |
-| `parsing` | Text extraction in progress |
-| `parsed` | Text extraction succeeded |
-| `ai_processing` | Gemini evaluation in progress |
-| `completed` | Valid active evaluation persisted |
-| `failed_parse` | Parse failed; inspectable |
-| `failed_ai` | AI/validation failed; prior active retained if any |
-| `archived` | Out of active working set |
+| Initial status `pending` (SRS-FR-014 / CSL-01) | Initial persisted status is `uploaded`; enqueue moves to `queued` (`pending` ≈ `uploaded`/`queued`) |
+| Single `processing` state (VR-20) | Refined to `parsing` → `parsed` → `ai_processing` |
+| CSL-08: job archive does not rewrite candidate statuses | **Superseded for v1 design:** candidates **may** transition to `archived` when a job is archived (SDD §6.7 / §7.3); job archive still blocks new uploads/processing |
+| ST-01 eligibility `pending` or `failed_ai` | Eligibility: `uploaded` / `queued` (failed enqueue) or `failed_ai` for retry |
+
+`failed_parse` is retained (not folded into `failed_ai`) to satisfy SRS-FR-016 without changing business rules.
 
 ### 4.5 Candidate Profiles
 
@@ -496,20 +526,31 @@ erDiagram
 | Lifecycle | Upserted during AI pipeline; retained with candidate |
 | Validation | Types per field; null/empty allowed if absent |
 
-### 4.6 Evaluations (Active)
+### 4.6 Evaluations (Active) — Frozen Design
 
 | Field | Content |
 | --- | --- |
 | Purpose | Current AI result for ranking |
 | Description | Score, rationale, summary, model metadata |
 | Primary Key | `id` UUID |
-| Foreign Keys | `candidate_id`, `job_id` |
-| Relationships | N:1 candidate; logically at most one `is_active=true` per candidate |
+| Foreign Keys | `candidate_id` (conceptually unique), `job_id` |
+| Relationships | **0..1 active evaluation per candidate** (table `evaluations`); history in `evaluation_history` |
 | Business Rules | BR-03, BR-12; SRS-FR-019–023, 051–052 |
-| Lifecycle | Created/updated on successful validation; prior copied to history before overwrite |
-| Validation | If active and candidate `completed`: score 0–100 numeric; rationale/summary non-empty |
+| Lifecycle | Upsert/replace active on validated AI success; prior row copied to `evaluation_history` before overwrite |
+| Validation | When candidate `completed`: score 0–100 numeric; rationale/summary non-empty |
 
-**failed_ai policy (SDD):** If no valid score payload, **do not** fabricate evaluation; retain prior active if any; set candidate `failed_ai`.
+**Frozen active-evaluation design (Critical):**
+
+| Table | Role |
+| --- | --- |
+| `evaluations` | Stores the **one active evaluation** per candidate |
+| `evaluation_history` | Stores **historical** evaluations (append-only snapshots) |
+
+**Conceptual uniqueness rule:** At most one row in `evaluations` per `candidate_id`.
+
+**Physical enforcement:** Deferred to development (e.g., unique constraint on `evaluations(candidate_id)`). This design document freezes the logical rule only.
+
+**failed_ai policy (SDD):** If no valid score payload, **do not** fabricate an evaluation row; retain prior `evaluations` row if any; set candidate `failed_ai`.
 
 ### 4.7 Evaluation History (Audit of Evaluations)
 
@@ -545,10 +586,24 @@ erDiagram
 | Description | Enqueued on 202 accept; claimed by workers |
 | Primary Key | `id` UUID |
 | Foreign Keys | `candidate_id`, `job_id` |
-| Relationships | N:1 candidate (typically one open item) |
-| Business Rules | Supports ST-01/ST-02; idempotent claim |
-| Lifecycle | `pending` → `locked`/`in_progress` → `done`/`dead` |
-| Validation | Candidate must be processable; job active |
+| Relationships | N:1 candidate (many historical rows; **at most one open** work item) |
+| Business Rules | Supports ST-01/ST-02; idempotent claim; **one open queue entry per candidate** |
+| Lifecycle | Open: `pending` → `locked` → terminal `done` or `dead`. Historical `done`/`dead` rows may remain |
+| Validation | Candidate must be processable; job `active` |
+
+**Queue terminology (frozen):**
+
+| Term | Meaning |
+| --- | --- |
+| Open entry | `queue_status` ∈ {`pending`, `locked`} |
+| `pending` | Available to claim |
+| `locked` | Claimed by a worker (`lock_owner` set); in-progress work |
+| `done` | Successfully finished |
+| `dead` | Exhausted / permanently failed claim path |
+
+Do **not** use a separate `in_progress` status — `locked` means in progress.
+
+**Rule:** At most **one open** `processing_queue` entry per candidate. Additional rows are allowed only after the prior open entry is terminal (`done`/`dead`), e.g., on retry enqueue.
 
 **Justification:** Required by SDD v1.1 async architecture (not optional for 202 model).
 
@@ -598,8 +653,9 @@ Column-level definitions below are design specifications (not SQL).
 | updated_at | Timestamptz | No | now | |
 
 **Constraints:** PK; FK owner; check lifecycle_status.  
+**Immutability:** `owner_user_id` must not be cleared or reassigned (VR-03).  
 **Unique rules:** None beyond PK.  
-**Soft delete:** Archive via lifecycle_status.  
+**Soft delete:** Archive via lifecycle_status (no `deleted_at` column).  
 **Hard delete:** Only when candidate count = 0.  
 **Conceptual indexes:** (owner_user_id, lifecycle_status, created_at desc).
 
@@ -662,25 +718,28 @@ Column-level definitions below are design specifications (not SQL).
 **Conceptual indexes:** (storage_path) unique recommended at implementation.  
 **Retention:** With candidate; removable during upload compensation before candidate commit.
 
-**Path convention (conceptual):** `{owner_user_id}/{job_id}/{candidate_id}/{filename}` — exact policy SQL deferred to implementation.
+**Path convention (standard):** `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}`  
+Exact Storage policy SQL deferred to implementation; path shape is frozen here.
 
 ### 5.6 `evaluations`
 
 | Column | Type | Nullable | Default | Notes |
 | --- | --- | --- | --- | --- |
 | id | UUID | No | generated | |
-| candidate_id | UUID | No | — | FK |
-| job_id | UUID | No | — | FK denormalized for query convenience |
-| match_score | Numeric | Yes | null | Required when completed/active valid |
+| candidate_id | UUID | No | — | FK; **conceptually unique** (one active) |
+| job_id | UUID | No | — | FK; must equal `candidates.job_id` |
+| match_score | Numeric | Yes | null | Required when candidate `completed` |
 | rationale | Text | Yes | null | |
 | summary | Text | Yes | null | |
-| model_metadata | JSON/JSONB | Yes | null | model id, prompt_version, timings |
-| is_active | Boolean | No | true | One active per candidate |
+| model_metadata | JSON/JSONB | Yes | null | model id, `prompt_version`, timings |
 | evaluated_at | Timestamptz | No | now | |
 
 **Constraints:** PK; FKs; check score null or between 0 and 100.  
-**Unique rule (conceptual):** at most one row with `is_active=true` per `candidate_id` (implementation: partial unique index or dedicated active table — choose in implementation; design requires the invariant).  
-**Retention:** Active row retained; prior versions moved to history.
+**Conceptual uniqueness rule (frozen):** one row per `candidate_id` in `evaluations` (the active evaluation).  
+**Physical enforcement:** Implemented during development (unique constraint on `candidate_id`).  
+**Overwrite procedure:** Copy current row to `evaluation_history`, then update/replace the `evaluations` row.  
+**Retention:** Active row retained; priors live only in `evaluation_history`.  
+**Invariant:** `candidates.job_id` is immutable; denormalized `job_id` must always match.
 
 ### 5.7 `evaluation_history`
 
@@ -718,7 +777,9 @@ Column-level definitions below are design specifications (not SQL).
 
 **Constraints:** PK; FKs.  
 **Conceptual indexes:** (queue_status, available_at) for claim; (candidate_id).  
-**Idempotency:** Prefer single open (`pending`/`locked`) item per candidate at implementation.
+**Open-entry rule (frozen):** at most one open row (`pending` or `locked`) per `candidate_id`. Physical partial uniqueness deferred to development.  
+**Claim pattern (implementation note):** `FOR UPDATE SKIP LOCKED` recommended for workers.  
+**Terminology:** `locked` = in progress (no separate `in_progress` status).
 
 ### 5.9 `audit_logs`
 
@@ -729,11 +790,12 @@ Column-level definitions below are design specifications (not SQL).
 | job_id | UUID | Yes | null | |
 | candidate_id | UUID | Yes | null | |
 | event_type | Text | No | — | e.g., upload_accepted, enqueue, status_change |
-| payload | JSON/JSONB | Yes | null | Non-secret context |
+| payload | JSON/JSONB | Yes | null | **Non-PII** context only |
 | created_at | Timestamptz | No | now | |
 
-**Constraints:** PK; optional FKs.  
-**Retention:** Align with academic demo needs; purge policy future.  
+**Constraints:** PK; optional FKs (ON DELETE SET NULL recommended for job/candidate refs).  
+**PII rule:** `audit_logs` must **never** contain raw PII (no resume text, email, phone, name, or file contents).  
+**Retention:** See §7.6.  
 **Soft delete:** None (append-only).
 
 ---
@@ -748,13 +810,14 @@ flowchart LR
   jobs -->|1:N| candidates
   candidates -->|1:1| resume_files
   candidates -->|1:0..1| candidate_profiles
-  candidates -->|1:0..1 active| evaluations
+  candidates -->|1:0..1| evaluations
   candidates -->|1:N| evaluation_history
-  candidates -->|1:N| processing_queue
+  candidates -->|1:N historical / 0..1 open| processing_queue
   profiles -->|1:N| audit_logs
   candidates -->|0..N| audit_logs
 ```
 
+**Annotations:** `evaluations` = one active evaluation per candidate. `processing_queue` allows many terminal rows; at most one open (`pending`/`locked`) per candidate.
 ### 6.2 Cardinality Summary
 
 | Parent | Child | Cardinality | Type |
@@ -763,24 +826,29 @@ flowchart LR
 | jobs | candidates | 1:N | One-to-Many |
 | candidates | resume_files | 1:1 | One-to-One |
 | candidates | candidate_profiles | 1:0..1 | One-to-One optional |
-| candidates | evaluations (active) | 1:0..1 | One-to-One optional |
+| candidates | evaluations | 1:0..1 | One-to-One optional (active only) |
 | candidates | evaluation_history | 1:N | One-to-Many |
-| candidates | processing_queue | 1:N | One-to-Many |
+| candidates | processing_queue | 1:N (≤1 open) | One-to-Many with open uniqueness |
 | profiles | audit_logs | 1:N | One-to-Many |
 
 ### 6.3 Cascade and Delete Behavior
 
+Prefer **archive** (status/lifecycle) over physical deletes in product flows.
+
 | Relationship | On Delete Intent | Rationale |
 | --- | --- | --- |
-| jobs → candidates | **Restrict** hard delete if children exist | SRS-FR-047 |
-| candidates → resume_files | Cascade when candidate removed (rare in v1) | Metadata follows candidate |
-| candidates → candidate_profiles | Cascade | Profile useless without candidate |
-| candidates → evaluations | Cascade or restrict+manual | Prefer cascade with history retained first |
-| candidates → evaluation_history | Restrict or cascade | Prefer **retain history**; if candidate removed, cascade only in controlled purge |
-| candidates → processing_queue | Cascade | Clear work items |
-| profiles → jobs | Restrict | Do not orphan ownership silently |
+| jobs → candidates | **Restrict** | SRS-FR-047 — hard delete job only if zero candidates |
+| profiles → jobs | **Restrict** | Do not orphan ownership |
+| candidates → resume_files | **Cascade** | Metadata follows candidate; also delete Storage object in controlled purge |
+| candidates → candidate_profiles | **Cascade** | Profile useless without candidate |
+| candidates → evaluations | **Cascade** | Active eval only exists for candidate |
+| candidates → evaluation_history | **Restrict** in normal ops; **Cascade only** in controlled academic/GDPR-style purge after export | Prefer retain history |
+| candidates → processing_queue | **Cascade** | Clear work items |
+| jobs/candidates → audit_logs | **SET NULL** on optional FKs | Retain audit rows; scrub entity refs |
 
-**Archive behavior:** Prefer status/lifecycle updates over physical deletes.
+**Ordered purge (rare, controlled):** (1) ensure history exported if required → (2) delete/cascade queue, evaluations, profiles, resume_files + Storage objects → (3) delete candidate → (4) only then allow history cascade if purge policy demands.
+
+**Archive behavior:** Job `lifecycle_status=archived`; candidates may move to status `archived` (authoritative lifecycle §4.4.1). No `deleted_at` soft-delete columns in v1.
 
 ---
 
@@ -809,10 +877,12 @@ stateDiagram-v2
   parsed --> ai_processing
   ai_processing --> completed
   ai_processing --> failed_ai
-  failed_ai --> queued
+  failed_ai --> queued: retry ST-01
   uploaded --> archived
   queued --> archived
+  parsing --> archived
   parsed --> archived
+  ai_processing --> archived
   completed --> archived
   failed_parse --> archived
   failed_ai --> archived
@@ -821,11 +891,11 @@ stateDiagram-v2
 | Phase | Behavior |
 | --- | --- |
 | Creation | `uploaded` after storage+DB commit |
-| Update | Status transitions by processor; failure_code set on failures |
-| Archive | `archived` when job/candidate archived |
-| Retention | Keep failed rows inspectable |
+| Update | Status transitions by processor per §4.4.1; `failure_code` / `failure_message` on failures |
+| Archive | May move to `archived` when job archived (authoritative rule; supersedes SRS CSL-08) |
+| Retention | Keep failed rows inspectable (SRS-NFR-008); see §7.6 |
 | Deletion | Not required in v1 product flows |
-| Recovery | Retry from `failed_ai`; re-upload new candidate for `failed_parse` |
+| Recovery | Retry from `failed_ai` → `queued`; re-upload new candidate for `failed_parse` |
 
 ### 7.3 Evaluations
 
@@ -860,8 +930,21 @@ stateDiagram-v2
 
 | Store | Lifecycle |
 | --- | --- |
-| audit_logs | Append-only operational events |
+| audit_logs | Append-only operational events (**no raw PII**) |
 | evaluation_history | Append-only evaluation snapshots |
+
+### 7.6 Retention Guidance (T-11)
+
+| Class | Data | Guidance |
+| --- | --- | --- |
+| Active working set | `active` jobs; non-archived candidates | Retained for product use |
+| Archived working set | `archived` jobs/candidates | Retained for owner history; excluded from default lists |
+| Evaluation audit | `evaluations` + `evaluation_history` | Long-lived for academic/audit explainability; purge only via controlled procedure |
+| Operational audit | `audit_logs` | Project-duration minimum; may purge older than configured window in future SaaS |
+| Resume objects | Storage + `resume_files` | Retained with candidate; delete on compensation or controlled purge |
+| Platform backups | Supabase/PostgreSQL backups | Follow platform retention; reconcile Storage orphans after restore |
+
+v1 academic default: retain all application data for the project duration unless a controlled purge is explicitly run.
 
 ---
 
@@ -895,13 +978,14 @@ Not a single distributed ACID transaction across Storage+DB; **compensation** pr
 | --- | --- |
 | 1 | Claim queue row (lock) |
 | 2 | Transition candidate statuses through parsing/AI stages |
-| 3 | On valid result: if active exists → insert `evaluation_history` → upsert `evaluations` active + `candidate_profiles` → `completed` |
-| 4 | On parse failure → `failed_parse` + failure fields |
-| 5 | On AI exhaustion → `failed_ai` + failure fields; retain prior active if invalid payload |
-| 6 | Mark queue done/dead |
+| 3 | On valid result: if `evaluations` row exists → insert `evaluation_history` → replace/upsert `evaluations` + `candidate_profiles` → `completed` |
+| 4 | On parse failure → `failed_parse` + failure fields; mark queue `done`/`dead` |
+| 5 | On AI exhaustion → `failed_ai` + failure fields; retain prior `evaluations` row if invalid payload |
+| 6 | Mark queue `done` or `dead` (closes the open entry) |
 
-**Consistency:** Never mark `completed` without validated active evaluation.  
-**Idempotency:** Re-claim should no-op if already `completed` unless retry path.
+**Consistency:** Never mark `completed` without a validated `evaluations` row.  
+**Idempotency:** Re-claim should no-op if already `completed` unless retry path.  
+**Queue rule:** Enqueue creates a new open entry only when no open entry exists for that candidate.
 
 ### 8.4 Candidate Ranking / Analytics
 
@@ -932,21 +1016,28 @@ Processor updates `candidates.status` and optional `audit_logs` event. UI pollin
 | --- | --- |
 | Primary keys | UUID on all tables |
 | FK integrity | All relationships in §6 |
-| One active evaluation | Conceptual unique (candidate_id) where is_active |
-| One resume file per candidate (v1) | Unique candidate_id on resume_files |
-| Open queue item | Prefer unique open work per candidate (implementation) |
+| One active evaluation | **Frozen:** one row in `evaluations` per `candidate_id` (conceptual unique); physical enforcement in development |
+| One resume file per candidate (v1) | Unique `candidate_id` on `resume_files` |
+| One open queue entry | At most one `pending`/`locked` row per candidate (conceptual); physical enforcement in development |
+| `owner_user_id` immutability | Never cleared or reassigned (VR-03) |
+| `candidates.job_id` immutability | Never changed after insert |
 
 ### 9.2 Check / Business Validations (from SRS)
 
 | Rule | Source |
 | --- | --- |
 | Job title/JD non-empty | VR-01, VR-02 |
+| Ownership not cleared on update | VR-03 |
 | Screening only on active jobs | VR-05 |
-| Status enum set | SDD §6.7 / VR-20 refined |
+| Authoritative status enum (§4.4.1) | SDD §6.7; **supersedes** VR-20 / SRS-DB-014 literal five-value set |
 | Score 0–100 when present | VR-22 / SRS-FR-019 |
 | Completed requires rationale+summary | VR-21, VR-23 |
-| MIME/size limits | VR-10–VR-12; default max size configured (commonly 5MB) |
+| MIME/size limits | VR-10–VR-12; default max size §10.7 |
+| Empty file rejected | VR-12 (application validation; size > 0) |
 | Hard delete empty jobs only | VR-04 / SRS-FR-047 |
+| Sparse CE fields allowed; missing CE ≠ `failed_parse` | VR-40–VR-42; CE-R1–R3 |
+| History before active overwrite | VR-25 |
+| Failed records retain messaging fields | VR-24 |
 
 ### 9.3 Nullability
 
@@ -961,8 +1052,8 @@ Processor updates `candidates.status` and optional `audit_logs` event. UI pollin
 | Concern | Approach |
 | --- | --- |
 | Duplicate uploads | Allowed as separate candidates (same file may re-upload); no content-hash uniqueness required in v1 |
-| Duplicate active evals | Forbidden by uniqueness invariant |
-| Duplicate queue storms | Idempotent enqueue/claim design |
+| Duplicate active evals | Forbidden — one `evaluations` row per candidate |
+| Duplicate open queue entries | Forbidden — one open entry per candidate |
 
 ---
 
@@ -998,22 +1089,61 @@ Select only needed columns for tables; filter by owner via RLS; paginate candida
 
 Consider partitioning `evaluation_history` / `audit_logs` by time when volume warrants — not required for v1.
 
+### 10.6 Analytics View Contracts (T-08)
+
+Conceptual read models for the Analytics Module (SDD). Physical SQL views are an **implementation choice**; contracts below are frozen for API/UI consumers.
+
+| View Contract | Purpose | Grain | Key Outputs (conceptual) | Primary Sources |
+| --- | --- | --- | --- | --- |
+| **Job Progress Summary** | Per-job screening progress | `job_id` | Counts by authoritative status; % completed; failed totals | `candidates` |
+| **Candidate Ranking** | Ranked list for a job | `job_id` + candidate | Rank order, `match_score`, name/summary refs, status | `evaluations` ⋈ `candidates` ⋈ `candidate_profiles` |
+| **Score Distribution** | Score histogram / buckets for a job or owner | `job_id` or owner | Bucket counts (e.g., 0–20 … 81–100) | `evaluations` (completed only) |
+| **Screening Statistics** | Operational throughput | job or owner + time window | Uploaded, queued, completed, `failed_parse`, `failed_ai` counts; avg score | `candidates`, `evaluations` |
+| **Dashboard Metrics** | Cross-job owner homepage | `owner_user_id` | Active jobs, total candidates, completed/failed, avg score | `jobs` ⋈ `candidates` ⋈ `evaluations` |
+
+All view contracts are **owner-scoped** (via `jobs.owner_user_id`) and exclude secrets/raw resume text.
+
+### 10.7 Operational Defaults (Design-Level) (T-09)
+
+Defaults for development configuration. **May be overridden** by environment/config without schema change.
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| UI poll interval | **3 seconds** | SPA status polling while job has non-terminal candidates (SDD polling) |
+| AI retry count | **2** transient retries | Inside Resume Processing Service before `failed_ai` (SRS-NFR-007 bounded backoff) |
+| Maximum upload size | **5 MB** per file | SRS-NFR-024 / VR-11 default |
+| Batch size | **20** candidates | Minimum Must capacity per job (SRS-NFR-010); claim/process chunk guidance |
+| Processor timeout guidance | **60 seconds** soft per candidate stage budget | Not a DB constraint; informs worker visibility timeout / `available_at` backoff |
+| Queue visibility timeout | **90 seconds** | If lock expires, row may become claimable again (`available_at`) |
+
 ---
 
 ## 11. Security Design
 
 Conceptual only — **no policy SQL** in this document.
 
+### 11.1 Data Classification (T-10)
+
+| Class | Examples | Handling |
+| --- | --- | --- |
+| **PII** | Candidate name, email, phone, location; resume file contents; LinkedIn/GitHub/portfolio URLs when personal | Private Storage; owner RLS; never in `audit_logs.payload` |
+| **Confidential** | Job descriptions; AI match scores, rationales, summaries; `model_metadata`; failure messages | Owner-only access; no public URLs |
+| **Internal** | Queue status, lock fields, attempt counts, non-PII event types, aggregate analytics | Owner/processor operational access |
+
+**Hard rule:** `audit_logs` must **never** contain raw PII.
+
+### 11.2 Authentication, Authorization, and Storage
+
 | Topic | Design |
 | --- | --- |
 | Authentication | Supabase Auth; `auth.uid()` ties to `profiles.id` / `jobs.owner_user_id` |
 | Authorization | Owner-based access to jobs and descendant rows |
-| RLS (conceptual) | Enable on jobs, candidates, profiles, evaluations, history, resume_files, queue, audit_logs; policies restrict to owner via job ownership join or owner_user_id |
-| Processor access | Least-privilege role; must re-validate ownership before writes |
-| PII | Resumes + extracted email/phone/name treated as sensitive; private storage; no public URLs |
+| RLS (conceptual) | Enable on jobs, candidates, profiles, evaluations, history, resume_files, queue, audit_logs; child access via `jobs.owner_user_id = auth.uid()` join |
+| Processor access | Least-privilege role; must re-validate ownership before writes; SPA must not claim queue locks |
 | Encryption at rest | Platform-managed PostgreSQL/Storage encryption |
 | Secure storage references | Store paths only; bucket private |
-| Audit | evaluation_history + audit_logs retained for academic/operational review |
+| Standard storage path | `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}` |
+| Audit | `evaluation_history` + non-PII `audit_logs` retained for academic/operational review |
 
 ---
 
@@ -1024,8 +1154,8 @@ Conceptual only — **no policy SQL** in this document.
 | Backups | Use Supabase/PostgreSQL automated backups |
 | PITR | Rely on platform point-in-time recovery where plan allows |
 | Disaster recovery | Restore project from backup; redeploy processor/SPA |
-| Consistency | Prefer restore DB + reconcile Storage orphans via path audit jobs |
-| Retention | Follow platform backup retention; application data retained for project duration |
+| Consistency | Prefer restore DB + reconcile Storage orphans via path audit under `resumes/{owner_id}/...` |
+| Retention | Platform backup retention + application retention §7.6 |
 
 ---
 
@@ -1046,13 +1176,17 @@ Conceptual only — **no policy SQL** in this document.
 | ID | Decision | Reason | Alternative | Trade-offs |
 | --- | --- | --- | --- | --- |
 | DBD-01 | DB-backed `processing_queue` | Fits SDD async 202 without new infra | External Redis/SQS | Simpler ops vs less throughput |
-| DBD-02 | `evaluations` + `evaluation_history` | Clear active vs audit | Single table versions only | Extra table; clearer reads |
+| DBD-02 | `evaluations` + `evaluation_history` (**frozen**) | Clear active vs audit; one active row per candidate | Single versioned table / `is_active` multi-row | Physical unique deferred to development |
 | DBD-03 | Separate `resume_files` | Compensation + metadata clarity | Path columns only on candidates | Slight join cost |
 | DBD-04 | JSONB for CE list fields | Flexible resume structure | Fully normalized child tables | Weaker relational queries |
-| DBD-05 | Refined candidate status enum | SDD observability | Coarse pending/processing | More transitions to enforce |
-| DBD-06 | `failed_parse` retained | SRS-FR-016 business requirement | Fold into generic failed | Keeps SRS alignment |
+| DBD-05 | Authoritative refined status enum | SDD observability; supersedes SRS five-state DB constraint | Coarse pending/processing only | More transitions to enforce |
+| DBD-06 | `failed_parse` retained | SRS-FR-016 / SDD DR-11 | Fold into `failed_ai` | Keeps parse vs AI failure distinct |
 | DBD-07 | Restrict job hard delete | SRS-FR-047 | Cascade delete all | Safer demos |
 | DBD-08 | Defer physical index/policy SQL | Design vs implementation split | Freeze SQL now | Avoid premature lock-in |
+| DBD-09 | Analytics as view contracts | Closes SDD handoff without premature SQL | Materialized tables now | Implementers choose view vs query |
+| DBD-10 | Design-level operational defaults | Closes SDD DR-15 handoff | Hard-code in app only | Config-overridable |
+| DBD-11 | Standard path `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}` | Predictable Storage RLS prefixes | Flat keys | Path not DB-enforced alone |
+| DBD-12 | One open queue entry per candidate | Prevent double-claim | Unlimited pending rows | Partial unique at development |
 
 ---
 
@@ -1078,8 +1212,8 @@ This database design operationalizes ResumeRank AI’s approved architecture and
 | --- | --- |
 | Architecture | PostgreSQL + Storage + Auth; owner isolation |
 | PRD | Jobs, uploads, ranking, analytics, human-in-the-loop data only |
-| SRS v1.1 | Extraction fields, archive/delete, evaluation audit, validations |
-| SDD v1.1 | Async queue, refined statuses, compensation-friendly resume metadata, polling-friendly status fields |
+| SRS v1.1 | Extraction fields, archive/delete, evaluation audit, validations; **status persistence uses authoritative refined enum** (§4.4.1) superseding SRS-DB-014 literal set |
+| SDD v1.1 | Async queue, refined statuses, compensation-friendly resume metadata, analytics view contracts, operational defaults |
 
 It is the baseline for **API Design Specification (RR-API-006)**.
 
@@ -1087,45 +1221,63 @@ It is the baseline for **API Design Specification (RR-API-006)**.
 
 ## 17. Database Architecture Review
 
+### 17.1 v1.0 Findings — Remediation Status (v1.1)
+
+| Issue (v1.0) | Severity | v1.1 Disposition | Section |
+| --- | --- | --- | --- |
+| One-active evaluation uniqueness open | Critical/Major | **Frozen:** `evaluations` = one active per candidate; physical unique in development | §4.6, §5.6 |
+| SRS vs refined status enum | Critical | **Authoritative lifecycle** §4.4.1 supersedes SRS simplified model; Appendix A mapping | §4.4.1 |
+| CSL-08 vs candidate `archived` | Critical | Authoritative rule allows candidate `archived` (SDD-aligned) | §4.4.1, §7.2 |
+| Analytics views missing | Major | **View contracts** added | §10.6 |
+| Operational defaults missing | Major | **Design-level defaults** published | §10.7 |
+| Open queue uniqueness soft | Major | **One open entry** rule frozen | §4.9, §5.8 |
+| Storage path not standardized | Major | Path frozen: `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}` | §5.5, §11.2 |
+| PII / audit overlap | Major | Classification + no raw PII in audit_logs | §11.1 |
+| Cascade/delete ambiguity | Minor | Ordered delete/archive rules clarified | §6.3 |
+| Queue `in_progress` wording | Minor | Terminology frozen (`locked` = in progress) | §4.9 |
+| Physical ER under-annotated | Minor | Annotations added | §3.3, §6.1 |
+| Retention vague | Minor | Retention guidance §7.6 | §7.6 |
+| JSONB CE schemas | Major (impl) | Remains deferred to API/AI docs (acceptable design boundary) | §5.4 |
+| `job_id` denorm drift | Minor | Immutability invariant stated | §5.6, §9.1 |
+
+### 17.2 Remaining Implementation Notes (Not Design Blockers)
+
 | Issue | Severity | Recommendation | Affected Section |
 | --- | --- | --- | --- |
-| One-active evaluation uniqueness is specified conceptually but physical enforcement pattern still open | **Major** | In implementation, choose partial unique index on `evaluations(candidate_id) WHERE is_active` **or** dedicated active table; add automated test | §5.6, DBD-02 |
-| `job_id` denormalized on evaluations/history/queue can drift if candidate moved (not allowed today) | **Minor** | Keep immutability rule: candidates never change job_id; document invariant | §5.6–5.8 |
-| JSONB CE structures lack formal JSON schemas in this design doc | **Major** | Define JSON shapes in API/AI docs or a short appendix before coding extractors | §5.4 |
-| DB queue may contend under high concurrency | **Minor** | Use `FOR UPDATE SKIP LOCKED` claim pattern at implementation; monitor | §5.8, §10 |
-| audit_logs vs evaluation_history overlap may confuse implementers | **Minor** | Keep evaluation_history for score snapshots only; audit_logs for operational events | §4.7, §4.10 |
-| Storage path convention not enforceable in DB alone | **Major** | Enforce in Resume/Storage service + Storage policies during implementation | §5.5, §11 |
-| No explicit purge job for academic end-of-life | **Minor** | Accept for v1; add retention runbook later | §7, §12 |
-| Multi-tenant future requires invasive RLS changes | **Minor** | Accepted; documented in §13/§15 | §13 |
-| Referential delete for history vs GDPR-style erase not fully specified | **Minor** | v1 archive-first; document erase as future controlled cascade | §6.3 |
-| Normalization of education/experience deferred via JSONB | **Minor** | Acceptable for v1; revisit if analytics need relational skills graph | §2.5 |
+| Physical unique on `evaluations(candidate_id)` and open-queue partial unique | Implementation | Apply in migrations/tests during development | §5.6, §5.8 |
+| CE JSON shapes | Implementation | Define in RR-API-006 / RR-AI-008 | §5.4 |
+| Storage/RLS policy SQL | Implementation | Enforce path prefix + private bucket policies | §11.2 |
+| Analytics physical views vs ad-hoc SQL | Implementation | Either satisfies §10.6 contracts | §10.6 |
 
-### Review Verdict
+### Review Verdict (v1.1)
 
 **Normalization:** Adequate 3NF core with justified JSONB flexibility.  
-**Redundancy:** Controlled (`job_id` denorm, email on profiles).  
-**Referential integrity:** Sound with restrict-on-job-delete.  
-**Scalability:** Suitable for demo and early SaaS; queue/history growth monitored.  
-**Security:** Owner RLS concept aligned; policy SQL deferred correctly.  
-**Data integrity:** Status/evaluation invariants clear; compensation supported.  
-**Future growth:** Extension points identified without polluting v1 schema.
+**Referential integrity:** Restrict-on-job-delete; clarified cascades; frozen active-eval/open-queue rules.  
+**Lifecycle:** Single authoritative status model aligned to SDD; SRS simplified enum superseded with mapping.  
+**Security:** PII/Confidential/Internal classification; audit logs non-PII.  
+**Scalability:** Suitable for demo and early SaaS; defaults published.  
+**SDD handoff:** Analytics contracts and operational defaults closed.
 
-**Approved as baseline for API Design (RR-API-006)** after treating the Major items as implementation prerequisites (uniqueness enforcement, CE JSON shapes, storage path/policy implementation).
+**Approved as baseline for API Design (RR-API-006).**
 
 ---
 
 ## 18. Appendices
 
-### Appendix A — Status Mapping (SRS ↔ SDD/DB)
+### Appendix A — Status Mapping (SRS Simplified → Authoritative DDD/SDD)
 
-| SRS Coarse (v1.0 language) | DB / SDD v1.1 Status |
+The authoritative persisted statuses are defined in §4.4.1. SRS simplified labels map as follows and **must not** be used as the sole DB check constraint set:
+
+| SRS Simplified (legacy) | Authoritative Status(es) |
 | --- | --- |
-| pending | uploaded, queued |
-| processing | parsing, parsed, ai_processing |
-| completed | completed |
-| failed_parse | failed_parse |
-| failed_ai | failed_ai |
-| (job archive) | candidates may become archived |
+| `pending` | `uploaded`, `queued` |
+| `processing` | `parsing`, `parsed`, `ai_processing` |
+| `completed` | `completed` |
+| `failed_parse` | `failed_parse` |
+| `failed_ai` | `failed_ai` |
+| *(no SRS candidate archive)* | `archived` |
+
+**Supersession:** SRS-DB-014, VR-20, CSL-01 initial-`pending` wording, and CSL-08 (no candidate status rewrite on job archive) are superseded for persistence/design by §4.4.1 and SDD §6.7. Product/API docs may still expose coarse labels if desired.
 
 ### Appendix B — Open Items for API Design (RR-API-006)
 
@@ -1133,19 +1285,37 @@ It is the baseline for **API Design Specification (RR-API-006)**.
 | --- | --- |
 | API-01 | Exact `202 Accepted` payload shape for upload/enqueue/retry |
 | API-02 | Queue claim is internal — document as non-public API |
-| API-03 | Polling endpoints/queries for candidate status aggregates |
+| API-03 | Polling endpoints/queries aligned to §10.6 view contracts and §10.7 poll interval |
 | API-04 | Error body mapping to `failure_code` / EH categories |
 | API-05 | Idempotency keys for enqueue/retry requests |
+| API-06 | Whether API responses project coarse SRS labels or refined statuses |
 
-### Appendix C — Document Control
+### Appendix C — Change Log (v1.0.0 → v1.1.0)
+
+| ID | Change | Type |
+| --- | --- | --- |
+| CL-01 | Authoritative candidate status lifecycle §4.4.1; supersedes SRS simplified enum | Critical |
+| CL-02 | Frozen active evaluation design: `evaluations` + `evaluation_history`; conceptual uniqueness; physical enforcement in development | Critical |
+| CL-03 | Analytics view contracts (Job Progress, Ranking, Score Distribution, Screening Statistics, Dashboard Metrics) | Major |
+| CL-04 | Operational defaults: poll interval, AI retries, max upload, batch size, timeouts | Major |
+| CL-05 | One open processing queue entry per candidate; queue terminology clarified | Major |
+| CL-06 | Data classification PII / Confidential / Internal; audit logs forbid raw PII | Major |
+| CL-07 | Standard storage path `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}` | Major |
+| CL-08 | Delete/cascade behavior clarified; ordered purge | Minor |
+| CL-09 | ER / relationship annotations for active eval and open queue | Minor |
+| CL-10 | Retention guidance §7.6 | Minor |
+| CL-11 | Removed ambiguous `is_active` multi-row pattern from frozen design | Critical |
+| CL-12 | Architecture review remediation status updated | Meta |
+
+### Appendix D — Document Control
 
 | Item | Value |
 | --- | --- |
 | Path | `docs/02-design/05-Database-Design-Document.md` |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Upstream | RR-ARCH-001; RR-PRD-002; RR-SRS-003 v1.1.0; RR-SDD-004 v1.1.0 |
 | Next | RR-API-006 API Design Specification |
 
 ---
 
-**End of Document — Document 05 — RR-DB-005 — Database Design Document v1.0.0**
+**End of Document — Document 05 — RR-DB-005 — Database Design Document v1.1.0**

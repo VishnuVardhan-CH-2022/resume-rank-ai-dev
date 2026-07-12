@@ -204,7 +204,7 @@ flowchart TD
 | **Dependencies** | RR-ARCH-001, RR-SDD-004 |
 | **When it should be created** | Phase 2, after System Design |
 | **Used by development?** | **Yes** — schema, migrations, and RLS implementation |
-| **Status** | Complete (v1.0.0) |
+| **Status** | Complete (v1.1.0) |
 
 ### 6.3 API Design Specification
 

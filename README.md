@@ -37,7 +37,7 @@ Professional documentation is maintained under [`docs/`](./docs/README.md).
 - [Product Requirements Document (RR-PRD-002)](./docs/01-requirements/02-Product-Requirements-Document.md)
 - [Software Requirements Specification (RR-SRS-003 v1.1.0)](./docs/01-requirements/03-Software-Requirements-Specification.md)
 - [System Design Document (RR-SDD-004 v1.1.0)](./docs/02-design/04-System-Design-Document.md)
-- [Database Design Document (RR-DB-005 v1.0.0)](./docs/02-design/05-Database-Design-Document.md)
+- [Database Design Document (RR-DB-005 v1.1.0)](./docs/02-design/05-Database-Design-Document.md)
 
 Documents are authored one at a time. Do not skip ahead in the roadmap.
 
