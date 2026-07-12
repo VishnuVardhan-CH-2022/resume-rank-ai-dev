@@ -53,4 +53,8 @@ Documents are authored one at a time. Do not skip ahead in the roadmap.
 
 Documentation suite complete (RR-DOC-000 through RR-MBA-013).
 
-**Implementation:** Phase 1 (project setup) — SPA scaffold under [`apps/web`](./apps/web). Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md) phases next.
+**Implementation:**
+- Phase 1 — SPA scaffold under [`apps/web`](./apps/web)
+- Phase 2 — Supabase project layout under [`supabase/`](./supabase) + browser client (`lib/supabase.ts`)
+
+Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md). After creating a Supabase project, copy [`.env.example`](./.env.example) values into `apps/web/.env` (public `VITE_*` only) and run `npx supabase link --project-ref <ref>`.

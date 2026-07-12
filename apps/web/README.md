@@ -6,11 +6,12 @@ React + TypeScript + Vite + Tailwind CSS + shadcn/ui.
 
 ```bash
 cd apps/web
+cp .env.example .env   # set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
 npm install
 npm run dev
 ```
 
-Copy root [`.env.example`](../../.env.example) values into a local `.env` when starting Phase 2 (Supabase). Only `VITE_*` keys belong in the Vite client.
+Only `VITE_*` keys belong in the Vite client. Edge secrets stay in Supabase secrets (see root [`.env.example`](../../.env.example) and [`supabase/README.md`](../../supabase/README.md)).
 
 ## Scripts
 
@@ -20,6 +21,7 @@ Copy root [`.env.example`](../../.env.example) values into a local `.env` when s
 | `npm run build` | Typecheck + production build |
 | `npm run preview` | Preview production build |
 | `npm run lint` | Oxlint |
+| `npm run test:errors` | ErrorObject mapping self-check (CP-05) |
 
 ## Layout
 
