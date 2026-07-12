@@ -59,5 +59,6 @@ Documentation suite complete (RR-DOC-000 through RR-MBA-013).
 - Phase 3 — Database migrations, RLS, analytics views ([`supabase/migrations/`](./supabase/migrations))
 - Phase 4 — Authentication (login/signup/logout, route guards)
 - Phase 5 — Private `resumes` Storage bucket + path helper
+- Phase 6 — Jobs module (CRUD, archive/delete-empty, Details tabs)
 
 Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md).

@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:errors": "tsx src/lib/errors.selftest.ts",
     "test:auth": "tsx src/modules/auth/lib/validation.selftest.ts",
-    "test:storage": "tsx src/lib/storagePaths.selftest.ts"
+    "test:storage": "tsx src/lib/storagePaths.selftest.ts",
+    "test:jobs": "tsx src/modules/jobs/lib/validation.selftest.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
