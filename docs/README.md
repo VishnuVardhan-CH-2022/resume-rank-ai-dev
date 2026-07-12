@@ -27,8 +27,8 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | 3 | 10 | Testing Document | RR-TEST-010 | Complete (v1.0.0) | [10-Testing-Document.md](./03-specialty/10-Testing-Document.md) |
 | 4 | 11 | Deployment Guide | RR-DEP-011 | Complete (v1.0.0) | [11-Deployment-Guide.md](./04-delivery/11-Deployment-Guide.md) |
 | 4 | 12 | Cursor Developer Guide | RR-DEV-012 | Complete (v1.0.0) | [12-Cursor-Developer-Guide.md](./04-delivery/12-Cursor-Developer-Guide.md) |
-| 5 | 13 | Final MBA Report | RR-MBA-013 | Pending | — |
+| 5 | 13 | Final MBA Report | RR-MBA-013 | Complete (v1.0.0) | [13-Final-MBA-Report.md](./05-mba-report/13-Final-MBA-Report.md) |
 
 ## Next Document
 
-**Final MBA Report (RR-MBA-013)** — after implementation evidence and Developer Guide acceptance.
+Documentation suite complete through RR-MBA-013. Next: implement system per RR-DEV-012 / RR-DEP-011 and insert Chapter 15 screenshots.
