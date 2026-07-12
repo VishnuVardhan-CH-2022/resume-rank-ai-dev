@@ -6,7 +6,7 @@ export function NotFoundPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6">
       <PageHeader title="Page not found" description="That route is not defined." />
-      <Button render={<Link to="/jobs" />}>Back to jobs</Button>
+      <Button render={<Link to="/dashboard" />}>Back to dashboard</Button>
     </div>
   );
 }
