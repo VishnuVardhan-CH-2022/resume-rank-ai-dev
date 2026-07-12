@@ -1,13 +1,14 @@
 import { PageHeader } from "@/components/layout/PageHeader";
+import { AnalyticsDashboard } from "@/modules/analytics/components/AnalyticsDashboard";
 
 export function AnalyticsPage() {
   return (
     <div>
       <PageHeader
         title="Analytics"
-        description="Dashboard metrics will be wired in the Analytics phase."
+        description="Owner-scoped job progress, distributions, and screening metrics."
       />
-      <p className="text-sm text-muted-foreground">Placeholder page.</p>
+      <AnalyticsDashboard />
     </div>
   );
 }

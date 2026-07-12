@@ -15,7 +15,8 @@
     "test:uploads": "tsx src/modules/uploads/lib/validation.selftest.ts",
     "test:screening": "tsx ../../supabase/functions/_shared/hashing.selftest.ts",
     "test:rps": "tsx ../../services/resume-processing/rps.selftest.ts",
-    "test:ranking": "tsx src/modules/ranking/types.selftest.ts"
+    "test:ranking": "tsx src/modules/ranking/types.selftest.ts",
+    "test:analytics": "tsx src/modules/analytics/lib/normalization.selftest.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

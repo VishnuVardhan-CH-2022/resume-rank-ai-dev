@@ -3,6 +3,7 @@ import {
   listCandidatesForJob,
   uploadResumeBatch,
 } from "@/modules/uploads/api/upload-api";
+import { analyticsKeys } from "@/modules/analytics/hooks/useAnalytics";
 import { jobsKeys } from "@/modules/jobs/hooks/useJobs";
 import type { BatchUploadResponse } from "@/modules/uploads/types";
 
@@ -37,6 +38,7 @@ export function useUploadResumes(jobId: string) {
       void qc.invalidateQueries({ queryKey: jobsKeys.candidateCount(jobId) });
       void qc.invalidateQueries({ queryKey: jobsKeys.screenEligible(jobId) });
       void qc.invalidateQueries({ queryKey: jobsKeys.detail(jobId) });
+      void qc.invalidateQueries({ queryKey: analyticsKeys.all });
     },
   });
 }
