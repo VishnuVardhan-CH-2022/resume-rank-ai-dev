@@ -4,6 +4,7 @@
  */
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { createErrorObject, type ErrorObject } from "./errors.ts";
+import { isRetryEligibleStatus, isScreenEligibleStatus } from "./eligibility.ts";
 
 export type ScreenAcceptedPayload = {
   accepted: true;
@@ -115,8 +116,6 @@ export async function loadOwnedActiveJob(
   return { ok: true, job };
 }
 
-const SCREEN_ELIGIBLE = new Set(["uploaded", "queued"]);
-
 /**
  * Select screen-eligible candidates. When `requestedIds` is provided:
  * - exclusively ineligible → 409
@@ -168,7 +167,7 @@ export async function selectScreenEligible(
         }),
       };
     }
-    const eligible = rows.filter((r) => SCREEN_ELIGIBLE.has(r.status));
+    const eligible = rows.filter((r) => isScreenEligibleStatus(r.status));
     if (eligible.length === 0) {
       return {
         ok: false,
@@ -184,7 +183,7 @@ export async function selectScreenEligible(
     return { ok: true, candidates: eligible };
   }
 
-  const eligible = rows.filter((r) => SCREEN_ELIGIBLE.has(r.status));
+  const eligible = rows.filter((r) => isScreenEligibleStatus(r.status));
   if (eligible.length === 0) {
     return {
       ok: false,
@@ -315,7 +314,7 @@ export async function loadRetryCandidate(
     return jobResult;
   }
 
-  if (candidate.status !== "failed_ai") {
+  if (!isRetryEligibleStatus(candidate.status)) {
     return {
       ok: false,
       status: 409,

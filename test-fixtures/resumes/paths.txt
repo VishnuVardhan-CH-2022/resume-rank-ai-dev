@@ -1,0 +1,40 @@
+# Valid PDFs (10)
+valid/valid_01.pdf
+valid/valid_02.pdf
+valid/valid_03.pdf
+valid/valid_04.pdf
+valid/valid_05.pdf
+valid/valid_06.pdf
+valid/valid_07.pdf
+valid/valid_08.pdf
+valid/valid_09.pdf
+valid/valid_10.pdf
+
+# Large-batch add-ons (20 total batch paths)
+batch/batch_01.pdf
+batch/batch_02.pdf
+batch/batch_03.pdf
+batch/batch_04.pdf
+batch/batch_05.pdf
+batch/batch_06.pdf
+batch/batch_07.pdf
+batch/batch_08.pdf
+batch/batch_09.pdf
+batch/batch_10.pdf
+batch/batch_11.pdf
+batch/batch_12.pdf
+batch/batch_13.pdf
+batch/batch_14.pdf
+batch/batch_15.pdf
+batch/batch_16.pdf
+batch/batch_17.pdf
+batch/batch_18.pdf
+batch/batch_19.pdf
+batch/batch_20.pdf
+
+# Additional scenarios
+unsupported/invalid_resume.txt
+unsupported/image_resume.png
+corrupt/corrupt_resume.pdf
+injection/prompt_injection_resume.pdf
+docx/valid_resume.docx

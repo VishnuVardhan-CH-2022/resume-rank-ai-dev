@@ -94,6 +94,22 @@ npx tsx supabase/functions/_shared/hashing.selftest.ts
 cd apps/web && npm run test:rps
 ```
 
+## Phase 12 QA seed + fixtures (CP-30)
+
+`supabase/seed/001_phase12_demo_dataset.sql` seeds:
+
+- one primary demo job (+ one secondary owner-scope job when a second profile exists)
+- 20 uploaded candidates for batch-capacity QA
+- completed / failed_ai / failed_parse fixtures for ranking and retry flows
+- deterministic `resumes/{owner}/{job}/{candidate}/{file}` paths for validation checks
+
+Fixture file path catalog lives in [`../test-fixtures/resumes/paths.txt`](../test-fixtures/resumes/paths.txt).
+
+```bash
+# After creating at least one auth user profile:
+npx supabase db reset
+```
+
 ## Phase 9 AI worker
 
 | Piece | Notes |
