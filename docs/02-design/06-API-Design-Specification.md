@@ -14,9 +14,8 @@
 | **Document Title** | API Design Specification |
 | **Document Number** | Document 06 |
 | **Document ID** | RR-API-006 |
-| **Version** | 1.1.0 |
+| **Version** | 1.0.0 |
 | **Status** | Baseline — Ready for UI/UX Design |
-| **Supersedes** | RR-API-006 v1.0.0 |
 | **Classification** | Internal — MBA Final Year Project |
 | **Specialization** | Artificial Intelligence & Data Science |
 | **Document Type** | API Design (REST / Supabase / Async Processing) |
@@ -46,8 +45,7 @@ This is a **design** document: it does not contain implementation code, OpenAPI/
 | Version | Date | Author | Description of Change | Review Status |
 | --- | --- | --- | --- | --- |
 | 0.1.0 | 12 July 2026 | Vish Var | Outline from SDD §8 and DDD Appendix B open items | Draft |
-| 1.0.0 | 12 July 2026 | Vish Var | Complete API design: endpoints, async 202 contracts, schemas, diagrams, traceability, and API Architecture Review | Superseded |
-| 1.1.0 | 12 July 2026 | Vish Var | Architecture review remediation: frozen upload→explicit screen workflow (no auto-enqueue); screen/retry responsibility split; signed resume access; Idempotency-Key + ErrorObject normalization; ranking model; expanded FR/NFR/UC traceability | Current |
+| 1.0.0 | 12 July 2026 | Vish Var | Complete API design: endpoints, async 202 contracts, schemas, diagrams, traceability, and API Architecture Review | Current |
 
 ---
 
@@ -83,15 +81,14 @@ This is a **design** document: it does not contain implementation code, OpenAPI/
 | F-01 | API Architecture Overview | §3.1 |
 | F-02 | Authentication Flow | §3.3 |
 | F-03 | Request Lifecycle | §3.5 |
-| F-04 | Upload → Screen Workflow | §6.0 |
-| F-05 | Upload Flow Detail | §6.7 |
-| F-06 | Async AI Processing | §8.1 |
-| F-07 | Sequence — Authentication | §14.1 |
-| F-08 | Sequence — Create Job | §14.2 |
-| F-09 | Sequence — Resume Upload | §14.3 |
-| F-10 | Sequence — AI Screening | §14.4 |
-| F-11 | Sequence — Candidate Ranking | §14.5 |
-| F-12 | Sequence — Analytics Retrieval | §14.6 |
+| F-04 | Upload Flow | §6.6 |
+| F-05 | Async AI Processing | §8.1 |
+| F-06 | Sequence — Authentication | §14.1 |
+| F-07 | Sequence — Create Job | §14.2 |
+| F-08 | Sequence — Resume Upload | §14.3 |
+| F-09 | Sequence — AI Screening | §14.4 |
+| F-10 | Sequence — Candidate Ranking | §14.5 |
+| F-11 | Sequence — Analytics Retrieval | §14.6 |
 
 ---
 
@@ -140,9 +137,9 @@ Define a production-oriented API design for ResumeRank AI that enables the React
 
 | Objective | API Response |
 | --- | --- |
-| Async-only screening | Explicit **Start Screening** → **202 Accepted** + poll; upload never starts processing |
+| Async-only screening | **202 Accepted** + poll; never return scores on upload |
 | Owner isolation | JWT + ownership checks + RLS |
-| Human-in-the-loop | No auto-reject/hire; no auto-enqueue after upload (ST-02 not adopted in v1 API) |
+| Human-in-the-loop | No auto-reject/hire endpoints |
 | Traceability | Every endpoint maps to PRD/SRS/SDD/DDD |
 | Implementability | Aligns to Supabase + Resume Processing Service |
 
@@ -209,7 +206,7 @@ APIs **expose refined authoritative statuses** (DDD §4.4.1). Optional `status_c
 | --- | --- |
 | RESTful conventions | Noun resources; standard HTTP verbs; meaningful status codes |
 | Resource-oriented design | Jobs, candidates, evaluations, analytics views as resources |
-| Idempotency | `Idempotency-Key` required on `/screen` and `/retry`; conceptual replay §8.8 |
+| Idempotency | Enqueue/retry with idempotency keys; one open queue entry per candidate |
 | Statelessness | Each request carries JWT; no server session store beyond Auth |
 | Consistency | Same field names as DDD entities; same status enum |
 | Versioning | URI/header strategy §12; v1 baseline |
@@ -242,9 +239,9 @@ flowchart LR
 | --- | --- | --- |
 | Auth | sign-in, sign-out, session, profile | Supabase Auth + `profiles` |
 | Jobs | create, update, archive, delete, list, get, progress, search | PostgREST / RPC |
-| Uploads | upload, batch upload, metadata, signed resume | Storage + candidates insert (**no enqueue**) |
-| Candidates | list, detail, profile, ranking, filters, resume access | PostgREST / views / signed URL |
-| AI Processing | `POST /jobs/{job_id}/screen`, `POST /candidates/{id}/retry` | RPS **202** + poll |
+| Uploads | upload, batch upload, metadata, status | Storage + candidates insert + 202 |
+| Candidates | list, detail, profile, ranking, filters | PostgREST / views |
+| AI Processing | start screening, retry, processing status | RPS **202** + poll |
 | Analytics | dashboard, job analytics, distributions | Views §10.6 DDD |
 | Internal | queue claim | **Non-public** (API-02) |
 
@@ -385,7 +382,7 @@ All job APIs require JWT. Ownership enforced via `owner_user_id = auth.uid()` (B
 | Method / Route | `PATCH /rest/v1/jobs?id=eq.{job_id}` |
 | Request Body | `{ "title"?: string, "jd_text"?: string }` |
 | Validation | Non-empty if provided; **must not** change `owner_user_id` (VR-03) |
-| Authorization | Owner only; **only `active` jobs** may be updated (archived → `403`) |
+| Authorization | Owner only; prefer `active` jobs |
 | Status Codes | `200`, `400`, `401`, `403`, `404` |
 
 ### 5.3 Archive Job
@@ -393,13 +390,11 @@ All job APIs require JWT. Ownership enforced via `owner_user_id = auth.uid()` (B
 | Field | Specification |
 | --- | --- |
 | Purpose | Soft-close job (SRS-FR-046) |
-| Method / Route | `PATCH /rest/v1/jobs?id=eq.{job_id}` with body below (**canonical**) |
+| Method / Route | `PATCH /rest/v1/jobs?id=eq.{job_id}` **or** `POST /rest/v1/rpc/archive_job` |
 | Request Body | `{ "lifecycle_status": "archived" }` |
-| Effects | Block **new uploads** and **Start Screening / retry**; existing rankings/evaluations/candidates remain **readable**; candidates **may** transition to `archived` (DDD §4.4.1) |
+| Effects | Block new uploads/screening; existing data readable; candidates **may** become `archived` (DDD §4.4.1) |
 | Status Codes | `200`, `401`, `403`, `404` |
 | Business Rules | BR-11 |
-
-**Archive vs delete:** Prefer archive whenever candidates exist. Hard delete (§5.4) only for empty jobs.
 
 ### 5.4 Delete Job
 
@@ -452,30 +447,6 @@ All job APIs require JWT. Ownership enforced via `owner_user_id = auth.uid()` (B
 
 ## 6. Resume Upload APIs
 
-### 6.0 Authoritative Upload → Screen Workflow (Frozen)
-
-```mermaid
-flowchart TD
-  A[Create Job] --> B[Upload Resume s]
-  B --> C[Review Uploaded Candidates status uploaded]
-  C --> D[User clicks Start Screening]
-  D --> E["POST /jobs/{job_id}/screen"]
-  E --> F[202 Accepted]
-  F --> G[Queue Processing]
-  G --> H[Polling]
-  H --> I[Completed / failed_*]
-```
-
-| Step | API behavior |
-| --- | --- |
-| Upload | Persist Storage + `candidates` (`uploaded`) + `resume_files`; **do not** create queue entries |
-| Review | List/detail candidates with `status=uploaded` |
-| Start Screening | **Only** `POST /jobs/{job_id}/screen` creates queue work → **202** |
-| Retry AI | **Only** `POST /candidates/{candidate_id}/retry` for `failed_ai` |
-
-**Removed:** Any automatic enqueue after upload (SRS ST-02 **not adopted** in v1 API design).  
-**Removed:** Any unnamed / composite “upload enqueue” endpoint.
-
 ### 6.1 Rules (Cross-Cutting)
 
 | Rule | Value | Source |
@@ -484,33 +455,30 @@ flowchart TD
 | Max size | **5 MB** default (configurable) | DDD §10.7, SRS-NFR-024 |
 | Empty file | Reject | VR-12 |
 | Batch capacity | ≥ **20** files | SRS-NFR-010 |
-| Job gate | Owned + `lifecycle_status=active` else **403** | VR-05, VR-14 |
+| Job gate | Owned + `lifecycle_status=active` | VR-05, VR-14 |
 | Path | `resumes/{owner_id}/{job_id}/{candidate_id}/{filename}` | DDD §5.5 |
 | Duplicate files | Allowed as **separate candidates** (DDD §9.4) | — |
 | Sync scores | **Forbidden** | SDD DD-02 |
-| Auto-enqueue | **Forbidden** | This ADS §6.0 |
 
 ### 6.2 Upload Resume (Single)
 
+Conceptual multi-step transaction (SPA-orchestrated or BFF):
+
+1. Validate MIME/size  
+2. Create candidate id (client or server)  
+3. `POST` Storage object to standard path  
+4. Insert `candidates` (`status=uploaded`) + `resume_files`  
+5. Enqueue processing (or defer to explicit ST-01 per product UX)  
+6. Return **202** when processing accepted  
+
 | Field | Specification |
 | --- | --- |
-| Purpose | Accept one resume under a job (SRS-FR-010–014); initial status **`uploaded`** (DDD §4.4.1; maps SRS `pending`) |
-| Method / Route | Composite orchestration: Storage PUT + `POST /rest/v1/candidates` + `POST /rest/v1/resume_files` |
+| Purpose | Accept one resume under a job (SRS-FR-010–014) |
+| Method / Route | Composite: Storage upload + `POST /rest/v1/candidates` + RPS enqueue |
 | Auth | JWT |
 | Request | Multipart file + `job_id` |
-| Response | **`201 Created`** with Candidate object (`status: "uploaded"`) — **not** 202 |
-| Side effects | Storage object + DB rows only; **no** `processing_queue` row |
-| Errors | EH-VAL, EH-STORE, EH-FORB (`403` if job archived/not owned) |
-| Idempotency | Not an async-work creator; client may retry carefully (duplicate candidates allowed) |
-
-Steps:
-
-1. Validate MIME/size; reject with ErrorObject if invalid  
-2. Allocate `candidate_id`  
-3. Storage PUT to standard path  
-4. Insert `candidates` (`status=uploaded`) + `resume_files`  
-5. On DB failure after Storage success → **delete** Storage object (compensation)  
-6. Return **201** Candidate — user reviews, then calls §8.2 Start Screening  
+| **202 Response** (API-01 frozen) | See §6.5 |
+| Errors | EH-VAL, EH-STORE, EH-FORB |
 
 ### 6.3 Batch Upload
 
@@ -518,9 +486,8 @@ Steps:
 | --- | --- |
 | Purpose | Multi-file upload in one user action (SRS-FR-010, SRS-FR-017) |
 | Behavior | Per-file validate → upload → persist; **partial success allowed** (BR-04) |
-| Response | **`200 OK`** with `{ "results": [ { "ok": true, "candidate": Candidate } | { "ok": false, "error": ErrorObject } ] }` |
+| Response | Array of per-file results: accepted (**202** items) and rejected (error objects) |
 | Failure isolation | One file failure does not roll back siblings |
-| Queue | **None** until Start Screening |
 
 ### 6.4 Upload Status / Resume Metadata
 
@@ -529,29 +496,17 @@ Steps:
 | Purpose | Read candidate/resume metadata and processing status |
 | Method / Route | `GET /rest/v1/candidates?id=eq.{id}&select=*,resume_files(*)` |
 | Response | Candidate + resume_files metadata (no binary) |
+| Notes | Binary download via signed Storage URL (owner policy) |
 
-### 6.5 Signed Resume Access
-
-| Field | Specification |
-| --- | --- |
-| Purpose | Owner-safe temporary access to private resume binary (SRS-FR-013, SRS-NFR-002, SRS-SEC-003) |
-| Method / Route | `GET /candidates/{id}/resume` |
-| Authentication | JWT required |
-| Authorization | Caller must own the parent job (`candidates → jobs.owner_user_id = auth.uid()`); else **403** |
-| Response Body | `{ "candidate_id": "uuid", "signed_url": "https://...", "expires_in": 300, "mime_type": "string", "original_filename": "string" }` |
-| `expires_in` | Seconds until URL expiry (default **300**; configurable) |
-| Validation | Candidate exists; `resume_files` row present |
-| Status Codes | `200`, `401`, `403`, `404` |
-| Notes | No permanent public URLs; no enumerable anonymous paths; regenerate by calling again |
-
-### 6.6 Compensation Strategy
+### 6.5 Compensation Strategy
 
 | Failure | Compensation |
 | --- | --- |
 | Storage OK, DB insert fails | **Delete** Storage object |
-| Later parse/AI fail (after screen) | Keep candidate; set terminal status + `failure_code` |
+| DB OK, enqueue fails | Keep candidate; log; allow ST-01 re-queue |
+| Later parse/AI fail | Keep candidate; set terminal status + `failure_code` |
 
-### 6.7 Upload Flow Diagram
+### 6.6 Upload Flow Diagram
 
 ```mermaid
 flowchart TD
@@ -560,11 +515,26 @@ flowchart TD
   B -->|Yes| C[Storage PUT path]
   C --> D{DB insert candidate + resume_files?}
   D -->|No| E[Delete Storage object]
-  D -->|Yes| F[HTTP 201 status uploaded]
-  F --> G[User reviews candidates]
-  G --> H["POST /jobs/{job_id}/screen"]
-  H --> I[HTTP 202 queued]
+  D -->|Yes| F[Enqueue → status queued]
+  F --> G[HTTP 202 Accepted]
+  G --> H[UI polls candidate status]
 ```
+
+### 6.7 Frozen 202 Upload/Enqueue Payload (API-01)
+
+```json
+{
+  "accepted": true,
+  "job_id": "uuid",
+  "candidate_id": "uuid",
+  "status": "queued",
+  "message": "Processing accepted"
+}
+```
+
+Batch: `{ "results": [ { ...same fields..., "ok": true } | { "ok": false, "error": ErrorObject } ] }`
+
+**Must not** include `match_score`, rationale, or summary.
 
 ---
 
@@ -605,41 +575,14 @@ flowchart TD
 | Method / Route | `GET /rest/v1/candidates?job_id=eq.{job_id}&select=id,status,failure_code,updated_at` |
 | Polling | Default interval **3s** (DDD §10.7); backoff allowed (SDD §13.1) |
 
-### 7.5 Candidate Ranking (Frozen Model)
+### 7.5 Candidate Ranking
 
 | Field | Specification |
 | --- | --- |
-| Purpose | Job candidate ranking view (SRS-FR-027–030) |
-| Method / Route | `GET /rest/v1/candidate_ranking?job_id=eq.{job_id}` |
-| AuthZ | Job owner only |
-| Pagination | `limit`/`offset` (v1); keyset reserved as future optimization (§13.2) |
-
-**Frozen response model — single ordered collection:**
-
-```json
-{
-  "job_id": "uuid",
-  "items": [
-    {
-      "rank": 1,
-      "candidate_id": "uuid",
-      "name": "string|null",
-      "status": "completed",
-      "match_score": 92.5,
-      "summary": "string|null",
-      "failure_code": null,
-      "failure_message": null
-    }
-  ]
-}
-```
-
-**Ordering rules (normative):**
-
-1. All `completed` candidates first, ordered by `match_score` **descending** (ties: `evaluated_at` desc, then `candidate_id`).
-2. Remaining candidates follow in lifecycle order: `ai_processing`, `parsing`, `parsed`, `queued`, `uploaded`, `failed_ai`, `failed_parse`, `archived`.
-3. Within each non-completed status group: `updated_at` descending.
-4. Non-completed items have `match_score: null` and `rank: null` (rank numbers apply only to completed).
+| Purpose | Rank completed candidates by score DESC (SRS-FR-027) |
+| Method / Route | `GET /rest/v1/candidate_ranking?job_id=eq.{job_id}&order=match_score.desc` |
+| Response | Ranked rows: rank, candidate_id, name, match_score, summary ref, status |
+| Rules | Ranking order applies to `completed`; failed/in-progress listed separately or with null score |
 
 ### 7.6 Candidate Search / Filters
 
@@ -647,24 +590,14 @@ flowchart TD
 | --- | --- |
 | Purpose | Segment by status / simple name match (SRS-FR-031 Should) |
 | Method / Route | Candidates list with `status=in.(...)` and optional profile name `ilike` |
-| Pagination | Should (SRS-FR-032); default exclude `archived` unless `include_archived=true` |
-| Sorting | Prefer ranking endpoint for score order; list uses `created_at` |
+| Pagination | Should (SRS-FR-032) |
+| Sorting | `created_at`, or `match_score` via ranking view |
 
 ---
 
 ## 8. AI Processing APIs
 
-**Synchronous screening is out of scope.** All screening is asynchronous (SDD v1.1).  
-**Queue creation** occurs **only** through the endpoints in this section (no upload enqueue).
-
-### 8.0 Endpoint Responsibility Split (Frozen)
-
-| Endpoint | Eligible statuses | Creates queue? |
-| --- | --- | --- |
-| `POST /jobs/{job_id}/screen` | **`uploaded`** and **`queued`** only | Yes → **202** |
-| `POST /candidates/{candidate_id}/retry` | **`failed_ai`** only | Yes → **202** |
-
-Responsibilities **must not overlap**. `/screen` must ignore/reject `failed_ai` (use `/retry`). `/retry` must reject non-`failed_ai`.
+**Synchronous screening is out of scope.** All screening is asynchronous (SDD v1.1).
 
 ### 8.1 Async Architecture
 
@@ -675,8 +608,7 @@ sequenceDiagram
   participant Q as processing_queue
   participant W as Worker
   participant DB as PostgreSQL
-  SPA->>RPS: POST /jobs/{id}/screen or /candidates/{id}/retry
-  Note over SPA,RPS: Idempotency-Key required
+  SPA->>RPS: POST screen/retry + JWT + Idempotency-Key
   RPS->>DB: Validate ownership, active job, JD, eligibility
   RPS->>Q: Insert open queue entry
   RPS->>DB: Set candidates status queued
@@ -685,45 +617,41 @@ sequenceDiagram
     SPA->>DB: Poll statuses / progress view
   end
   W->>Q: Claim locked SKIP LOCKED
-  W->>DB: parsing to completed or failed_*
+  W->>DB: parsing → ... → completed/failed_*
 ```
 
-### 8.2 Start Screening
+### 8.2 Start Screening (ST-01)
 
 | Field | Specification |
 | --- | --- |
-| Purpose | Explicit Run Screening for not-yet-processed candidates (ST-01 core path; UC-05) |
-| Method / Route | `POST /jobs/{job_id}/screen` |
+| Purpose | Explicit run screening for eligible candidates (ST-01) |
+| Method / Route | `POST /v1/jobs/{job_id}/screen` |
 | Authentication | JWT |
-| Authorization | Job owner; job `active`; JD present (SRS-FR-009); archived job → **403** |
-| Headers | `Authorization`, `Content-Type`, **`Idempotency-Key`** (required) |
-| Request Body | `{ "candidate_ids"?: uuid[] }` — omit = all eligible on job |
-| Eligibility | **`uploaded` or `queued` only** |
-| Non-eligibility | `failed_ai` → use §8.3; `completed`/`failed_parse`/`archived`/in-flight → skip or `409` if exclusively requested |
-| Response | **202** — see §8.7 |
-| Side effects | One open queue entry per accepted candidate; status → `queued` |
-| Errors | `400` no eligible / missing JD; `403`; `409` conflict |
+| Authorization | Job owner; job `active`; JD present (SRS-FR-009) |
+| Headers | `Authorization`, `Content-Type`, **`Idempotency-Key`** (API-05) |
+| Request Body | `{ "candidate_ids"?: uuid[] }` — omit = all eligible |
+| Eligibility | `uploaded`, `queued` (re-enqueue), or per product rules for not-yet-processed; **retry path uses §8.3** |
+| Response | **202** with `{ job_id, accepted_candidate_ids[], status: "queued" }` |
+| Side effects | One open queue entry per candidate; status → `queued` |
+| Errors | `400` no eligible / missing JD; `403`; `409` open queue exists without terminal |
 
 ### 8.3 Retry Screening
 
 | Field | Specification |
 | --- | --- |
-| Purpose | Re-queue **`failed_ai`** only (SRS-FR-025 Should; UC-10) |
-| Method / Route | `POST /candidates/{candidate_id}/retry` |
-| Authentication | JWT |
-| Authorization | Owner of parent job; job `active`; JD present |
-| Headers | **`Idempotency-Key`** (required) |
-| Preconditions | Candidate `status = failed_ai` |
-| Behavior | Enqueue; set `queued`; on later success: history snapshot then overwrite active evaluation (BR-12) |
-| Response | **202** — see §8.7 |
-| Errors | `409` if not `failed_ai`; `403` archived/not owner; `404` |
+| Purpose | Re-queue `failed_ai` candidates (SRS-FR-025 Should; UC-10) |
+| Method / Route | `POST /v1/jobs/{job_id}/candidates/{candidate_id}/retry` |
+| Preconditions | Status `failed_ai`; job active; JD present |
+| Behavior | Snapshot rules on later success (history before overwrite); **202** |
+| Idempotency | Idempotency-Key; no second open queue entry |
+| Errors | `409` if not `failed_ai`; `403` archived job |
 
 ### 8.4 Processing Status
 
 | Field | Specification |
 | --- | --- |
 | Purpose | Observe progress (API-03) |
-| Method / Route | §7.4 candidate status poll + `job_progress_summary` |
+| Method / Route | Candidate status poll + `job_progress_summary` |
 | Terminal stop | All candidates in `{completed, failed_parse, failed_ai, archived}` |
 
 ### 8.5 Evaluation Retrieval
@@ -732,7 +660,7 @@ sequenceDiagram
 | --- | --- |
 | Purpose | Read active evaluation (SRS-FR-023) |
 | Method / Route | `GET /rest/v1/evaluations?candidate_id=eq.{id}` |
-| History | `GET /rest/v1/evaluation_history?candidate_id=eq.{id}&order=archived_at.desc` (owner-only via RLS) |
+| History | `GET /rest/v1/evaluation_history?candidate_id=eq.{id}&order=archived_at.desc` |
 | Rules | One active evaluation; history append-only (BR-12) |
 
 ### 8.6 Failure Handling, Retry, Audit
@@ -744,33 +672,6 @@ sequenceDiagram
 | Success overwrite | Insert `evaluation_history` then replace `evaluations` |
 | Audit logs | Operational events only; **no raw PII** (DDD §11.1) |
 | Internal claim | Worker-only; **not a public API** (API-02) |
-
-### 8.7 Frozen 202 Accepted Payload (API-01)
-
-Applies to **`/screen` and `/retry` only** (not upload):
-
-```json
-{
-  "accepted": true,
-  "job_id": "uuid",
-  "accepted_candidate_ids": ["uuid"],
-  "status": "queued",
-  "message": "Processing accepted"
-}
-```
-
-For single-candidate retry, `accepted_candidate_ids` has one element.  
-**Must not** include `match_score`, rationale, or summary.
-
-### 8.8 Idempotency for Asynchronous Work
-
-| Rule | Design |
-| --- | --- |
-| Required header | `Idempotency-Key` on **every** endpoint that creates async work: `/screen`, `/retry` |
-| Scope | Unique per authenticated user (recommended: key namespaced by `auth.uid()`) |
-| Replay | Same key + same route + same logical body → return the **original 202 payload** without creating a second open queue entry |
-| Conflict | Same key with different body → **409** |
-| Storage | Conceptual idempotency record (table or cache) retained for a configurable window (e.g., 24h) — implementation detail |
 
 ---
 
@@ -832,8 +733,6 @@ All analytics are **owner-scoped**, read-only, and map to DDD §10.6 view contra
 
 ### 10.1 Standard Error Object (T-04) — API-04 Frozen
 
-**Normalization rule (Major):** Every client-visible failure from Supabase Auth, PostgREST, Storage, Resume Processing Service, or Gemini/processor mapping **must** be translated into this ErrorObject **before** it reaches the frontend. The SPA must not parse raw vendor error payloads as the primary UX contract.
-
 ```json
 {
   "error": {
@@ -854,53 +753,38 @@ All analytics are **owner-scoped**, read-only, and map to DDD §10.6 view contra
 | `failure_code` | Populated for candidate terminal failures when applicable |
 | `retryable` | Guidance for client |
 
-### 10.2 Source → ErrorObject Mapping
-
-| Source | Typical EH code | Notes |
-| --- | --- | --- |
-| Supabase Auth | EH-AUTH | Invalid/expired session, bad credentials |
-| PostgREST / RLS deny | EH-FORB / EH-VAL | Ownership failures → EH-FORB |
-| Storage | EH-STORE | Upload/download failures |
-| RPS validation | EH-VAL / EH-FORB | Eligibility, archived job, missing JD |
-| Gemini / AI pipeline | EH-AI | Surfaced as candidate `failed_ai` after 202; sync RPS faults use ErrorObject |
-| Parse pipeline | EH-PARSE | Surfaced as candidate `failed_parse` after 202 |
-| Platform / unknown | EH-SYS | 500/503 |
-
-### 10.3 Category Mapping
+### 10.2 Category Mapping
 
 | Category | HTTP | Examples |
 | --- | --- | --- |
-| Validation | **422** semantic; **400** malformed JSON/body | Empty JD, bad MIME, oversize |
-| Authentication | **401** | Missing/expired JWT |
-| Authorization | **403** | Another user’s job; archived job mutation |
-| Not found | **404** | Unknown id for owner scope (do **not** mask as 403 in v1) |
-| Upload/Storage | **502**/**503** or **400** per storeability | Storage put failure |
-| Business conflict | **409** | Delete job with candidates; retry non-`failed_ai`; idempotency body mismatch |
-| Async AI / Parse | Resource status after **202** | `failed_ai` / `failed_parse` |
-| Rate limit | **429** (EH-SYS) | Auth/upload/screen throttling |
-| System | **500** / **503** | Platform outage |
+| Validation | 400 / 422 | Empty JD, bad MIME, oversize |
+| Authentication | 401 | Missing/expired JWT |
+| Authorization | 403 | Another user’s job |
+| Upload/Storage | 400 / 502 | Storage put failure |
+| Business conflict | 409 | Delete job with candidates; retry non-failed_ai |
+| AI / Parse (async) | Reflected in **resource status**, not upload 5xx after 202 | `failed_ai` / `failed_parse` |
+| System | 500 / 503 | Platform outage |
 
-### 10.4 Retryable vs Non-Retryable
+### 10.3 Retryable vs Non-Retryable
 
 | Retryable | Non-Retryable |
 | --- | --- |
-| Transient EH-STORE / EH-SYS; processor-internal AI backoff | EH-VAL, EH-FORB, EH-AUTH (until re-login), unsupported MIME |
-| User **`POST /candidates/{id}/retry`** for `failed_ai` | Auto-enqueue; sync score on upload |
+| Transient EH-STORE / EH-SYS / EH-AI (processor internal) | EH-VAL, EH-FORB, EH-AUTH (until re-login), unsupported MIME |
+| User retry ST-01 for `failed_ai` | Fabricating scores; sync re-score in upload |
 
-### 10.5 HTTP Status Mapping (T-05)
+### 10.8 HTTP Status Mapping (T-05)
 
 | HTTP | When |
 | --- | --- |
-| 200 | Successful read/update; batch upload aggregate |
-| 201 | Created (job, single upload candidate) |
-| 202 | Async work accepted (**`/screen`**, **`/retry` only**) |
+| 200 | Successful read/update |
+| 201 | Created (job) |
+| 202 | Processing accepted (upload enqueue / screen / retry) |
 | 204 | Deleted / sign-out |
-| 400 | Malformed request |
-| 422 | Semantic validation failure |
+| 400/422 | Validation |
 | 401 | Unauthenticated |
-| 403 | Forbidden (ownership / archived gate) |
-| 404 | Not found |
-| 409 | Conflict (business rule / idempotency) |
+| 403 | Forbidden |
+| 404 | Not found (or masked as 403 per security preference) |
+| 409 | Conflict (business rule) |
 | 429 | Rate limited |
 | 500/503 | System |
 
@@ -911,16 +795,14 @@ All analytics are **owner-scoped**, read-only, and map to DDD §10.6 view contra
 | Topic | Design |
 | --- | --- |
 | JWT Authentication | All protected routes require valid Supabase JWT |
-| Ownership validation | `jobs.owner_user_id = auth.uid()`; processor re-checks; signed resume §6.5 enforces same |
+| Ownership validation | `jobs.owner_user_id = auth.uid()`; processor re-checks |
 | RLS interaction | PostgREST relies on RLS; SPA uses anon key + user JWT only |
-| Rate limiting | Platform/edge limits on Auth, upload, `/screen`, `/retry` (config) |
+| Rate limiting | Platform/edge limits on Auth, upload, and `/screen` (implementation config) |
 | Input validation | MIME, size, UUID format, string lengths, enum checks |
 | Output validation | No service keys; no raw resume text in analytics; scores only when completed |
 | File upload security | Private bucket; path prefix ownership; type sniffing beyond extension |
-| Signed resume access | Short-lived `signed_url`; ownership required; no permanent public URLs |
-| Prompt injection mitigation | Processor treats resume/JD as untrusted text (detail in RR-AI-008 / RR-SEC-009) |
+| Prompt injection mitigation | Processor treats resume/JD as untrusted text; no tool-calling from model to mutate unauthorized data (detail in RR-AI-008 / RR-SEC-009) |
 | PII handling | Classification per DDD §11.1; audit logs never raw PII |
-| Error normalization | Vendor errors never leak raw to UI (§10.1) |
 
 **Forbidden:** Gemini API key or service-role key in SPA (BR-05, SRS-SEC-002).
 
@@ -930,13 +812,12 @@ All analytics are **owner-scoped**, read-only, and map to DDD §10.6 view contra
 
 | Topic | Policy |
 | --- | --- |
-| Current version | **v1** (this document v1.1.0 contracts) |
-| Command routes (RPS) | Paths `/jobs/.../screen`, `/candidates/.../retry` are **v1 command API**; breaking changes require `/v2/...` |
-| PostgREST resources | Unversioned table/view names; **additive-only** in v1 (new nullable fields/views allowed) |
-| Client compatibility rule | SPA may rely on frozen JSON contracts in §15; unknown fields ignored |
-| Backward compatibility | Do not remove or rename fields in v1 without deprecation |
-| Deprecation | Announce in project release notes; retain through at least the next tagged documentation minor (e.g., 1.x → keep until 2.0 design) |
-| Breaking changes | New major; examples: changing authoritative status enum, removing explicit-screen workflow, dropping 202 async model |
+| Current version | **v1** |
+| RPS routes | Prefix `/v1/...` |
+| PostgREST | Unversioned resource names; breaking changes require new views or v2 prefix |
+| Backward compatibility | Additive fields preferred; do not remove fields in v1 without deprecation |
+| Deprecation | Announce in release notes; retain ≥1 minor cycle |
+| Breaking changes | New major (`/v2`); examples: renaming status enum, removing 202 async model |
 
 ---
 
@@ -952,21 +833,19 @@ All analytics are **owner-scoped**, read-only, and map to DDD §10.6 view contra
 | AI transient retries | 2 (processor) |
 | Processor soft timeout | 60s / stage |
 | Queue visibility | 90s |
-| Signed URL TTL | 300 seconds |
 
 ### 13.2 Tactics
 
 | Tactic | Design |
 | --- | --- |
-| Pagination (v1) | `limit`/`offset` on lists and ranking |
-| Keyset pagination | **Future optimization** for large ranking sets (cursor on `(match_score, candidate_id)`); not required for v1 demo |
-| Batch uploads | Parallel per-file with isolation; no auto-screen |
-| Async processing | **202** only from `/screen` and `/retry`; never block HTTP on Gemini |
+| Pagination | `limit`/`offset` or keyset on lists |
+| Batch uploads | Parallel per-file with isolation |
+| Async processing | 202 + poll; never block HTTP on Gemini |
 | Compression | HTTPS/CDN for SPA; JSON as-is |
 | Caching | Short-lived client cache; invalidate on mutations; do not cache stale statuses across poll |
 | Timeouts | Client upload timeout > processor soft budget |
-| Retry strategy | Idempotency-Key replay for `/screen` and `/retry` |
-| Rate limiting | Protect Auth, upload, `/screen`, `/retry` |
+| Retry strategy | Idempotent enqueue with Idempotency-Key |
+| Rate limiting | Protect `/screen` and Auth |
 
 ---
 
@@ -1003,14 +882,15 @@ sequenceDiagram
   participant SPA
   participant ST as Storage
   participant API as PostgREST
+  participant RPS as Processing Service
   SPA->>ST: PUT resume path
   SPA->>API: Insert candidate uploaded + resume_files
   alt DB fails
     SPA->>ST: Delete object
   else OK
-    API-->>SPA: 201 Candidate uploaded
+    SPA->>RPS: Enqueue
+    RPS-->>SPA: 202 queued
   end
-  Note over SPA: No enqueue at upload
 ```
 
 ### 14.4 AI Screening
@@ -1020,8 +900,8 @@ sequenceDiagram
   participant SPA
   participant RPS
   participant DB
-  SPA->>RPS: POST /jobs/{id}/screen + Idempotency-Key
-  RPS->>DB: Validate + enqueue uploaded/queued only
+  SPA->>RPS: POST /v1/jobs/{id}/screen
+  RPS->>DB: Validate + enqueue + queued
   RPS-->>SPA: 202
   loop Poll
     SPA->>DB: GET candidates status / progress
@@ -1150,111 +1030,26 @@ See §10.1.
 
 ## 16. Traceability Matrix
 
-### 16.1 Functional Requirements → API
+| PRD Capability | SRS | SDD Module | DDD Entity/View | API |
+| --- | --- | --- | --- | --- |
+| Auth / session | SRS-FR-001–004 | Auth Module | `profiles` | §4 Auth APIs |
+| Create/list jobs | SRS-FR-005–006 | Job Management | `jobs` | §5.1, §5.5–5.6 |
+| Update job | SRS-FR-007 | Job Management | `jobs` | §5.2 |
+| Archive/delete | SRS-FR-046–047 | Job Management | `jobs` | §5.3–5.4 |
+| Upload resumes | SRS-FR-010–014, 017 | Resume Upload | `candidates`, `resume_files` | §6 |
+| Screening async | ST-01, SRS-NFR-011 | Resume Processing | `processing_queue` | §8.2 |
+| Retry AI | SRS-FR-025 | Resume Processing | `evaluations`, history | §8.3 |
+| Rank candidates | SRS-FR-027–028 | Ranking | `evaluations`, ranking view | §7.5 |
+| Candidate detail/CE | SRS-FR-029, 048–050 | Candidates | `candidate_profiles` | §7.2–7.3 |
+| Failed visible | SRS-FR-030 | Ranking/Candidates | `candidates` | §7.1 |
+| Filter/paginate | SRS-FR-031–032 | Candidates | `candidates` | §7.6 |
+| Dashboard | SRS-FR-033 | Analytics | `dashboard_metrics` | §9.1 |
+| Distributions | SRS-FR-034–036 | Analytics | stats/distribution views | §9.3–9.5 |
+| Job progress | SRS-FR-038 | Analytics/Ranking | `job_progress_summary` | §5.7, §9.2 |
+| No auto-hire | SRS-FR-026, BR-02 | — | — | **No endpoint** |
+| Secrets server-only | SRS-FR-022, BR-05 | RPS | — | §8, §11 |
 
-| SRS FR | Priority | API / Surface |
-| --- | --- | --- |
-| SRS-FR-001 | Must | §4.1–4.2 Sign up / Sign in |
-| SRS-FR-002 | Must | §4.4 Session; 401 on protected APIs |
-| SRS-FR-003 | Must | §4.3 Sign out |
-| SRS-FR-004 | Must | JWT + RLS on §§5–9; §11 |
-| SRS-FR-005 | Must | §5.1 Create Job |
-| SRS-FR-006 | Must | §5.5–5.6, §5.8 List/Get/Search Jobs |
-| SRS-FR-007 | Should | §5.2 Update Job |
-| SRS-FR-008 | Must | Candidates/files/evaluations require `job_id` §§6–8 |
-| SRS-FR-009 | Must | §8.2 / §8.3 JD required |
-| SRS-FR-010 | Must | §6.3 Batch Upload |
-| SRS-FR-011 | Must | §6.1 PDF/DOCX |
-| SRS-FR-012 | Must | §6.1–6.2 EH-VAL |
-| SRS-FR-013 | Must | §6.2 Storage; §6.5 signed access |
-| SRS-FR-014 | Must | §6.2 create candidate `uploaded` (DDD maps SRS pending) |
-| SRS-FR-015 | Must | RPS processor (internal after §8.2) |
-| SRS-FR-016 | Must | Processor → `failed_parse`; visible §7 |
-| SRS-FR-017 | Must | §6.3 partial success |
-| SRS-FR-018 | Must | RPS after §8.2 |
-| SRS-FR-019 | Must | §8.5 / §15.4 `match_score` |
-| SRS-FR-020 | Must | §8.5 rationale |
-| SRS-FR-021 | Must | §8.5 summary |
-| SRS-FR-022 | Must | §8 RPS only; §11 no client Gemini |
-| SRS-FR-023 | Must | §8.5 evaluations persist/read |
-| SRS-FR-024 | Must | Processor → `failed_ai` |
-| SRS-FR-025 | Should | §8.3 Retry |
-| SRS-FR-026 | Must | **No endpoint** |
-| SRS-FR-027 | Must | §7.5 Ranking order |
-| SRS-FR-028 | Must | §7.5 item fields |
-| SRS-FR-029 | Must | §7.2 Detail |
-| SRS-FR-030 | Must | §7.5 includes failed statuses |
-| SRS-FR-031 | Should | §7.6 Filters |
-| SRS-FR-032 | Should | §7.1 / §7.5 pagination |
-| SRS-FR-033 | Must | §9.1 Dashboard |
-| SRS-FR-034 | Should | §9.3 / §9.5 Status distribution |
-| SRS-FR-035 | Should | §9.4 Score distribution |
-| SRS-FR-036 | Should | §9.2 Job analytics |
-| SRS-FR-037 | Must | Status enum §1.8; transitions via RPS |
-| SRS-FR-038 | Must | §5.7 / §9.2 Progress |
-| SRS-FR-039 | Must | §10 ErrorObject + `failure_message` |
-| SRS-FR-040 | Must | Per-candidate isolation §6.3 / §8 |
-| SRS-FR-041 | Could | §17 Future export |
-| SRS-FR-042 | Could | Future |
-| SRS-FR-043 | Won't | No email API |
-| SRS-FR-044 | Won't | No HM RBAC API |
-| SRS-FR-045 | Won't | No OCR API |
-| SRS-FR-046 | Must | §5.3 Archive |
-| SRS-FR-047 | Must | §5.4 Delete |
-| SRS-FR-048 | Must | Processor persist; read §7.3 |
-| SRS-FR-049 | Should | §7.3 optional CE fields |
-| SRS-FR-050 | Must | §7.2–7.3 display |
-| SRS-FR-051 | Must | §8.5 one active evaluation |
-| SRS-FR-052 | Must | §8.3 overwrite on success |
-| SRS-FR-053 | Must | §8.5 / §8.6 history before overwrite |
-| ST-01 | Must | §8.2 Start Screening (uploaded/queued); retry via §8.3 |
-| ST-02 | May | **Not adopted** — §6.0 forbids auto-enqueue |
-
-### 16.2 Non-Functional Requirements → API
-
-| SRS NFR | Priority | API / Design Support |
-| --- | --- | --- |
-| SRS-NFR-001 | Must | HTTPS assumed for all surfaces §3 |
-| SRS-NFR-002 | Must | Private Storage §6; signed URL §6.5 |
-| SRS-NFR-003 | Must | §11 secrets policy |
-| SRS-NFR-004 | Must | JWT + ownership §11 |
-| SRS-NFR-005 | Must | §6.1 validation |
-| SRS-NFR-006 | Must | §6.3 / §8 isolation |
-| SRS-NFR-007 | Should | §13.1 AI retries |
-| SRS-NFR-008 | Must | Failed candidates readable §7 |
-| SRS-NFR-009 | Should | Lean §9 views; SPA concern |
-| SRS-NFR-010 | Must | §6.1 batch ≥20 |
-| SRS-NFR-011 | Must | §8 async 202 + poll |
-| SRS-NFR-012 | Should | §7 pagination; keyset future §13.2 |
-| SRS-NFR-013 | Must | Workflow §6.0 supports primary path |
-| SRS-NFR-014 | Must | Status vocabulary §1.8 |
-| SRS-NFR-015 | Should | UI/UX doc (not API) |
-| SRS-NFR-016 | Should | UI/UX doc |
-| SRS-NFR-017 | Must | §8.5–8.6 evaluation + history |
-| SRS-NFR-018 | Should | Developer Guide |
-| SRS-NFR-019 | Must | Deployment Guide / `.env.example` |
-| SRS-NFR-020 | Should | RPS adapter boundary §8 |
-| SRS-NFR-021 | Must | Deployment (Vercel) |
-| SRS-NFR-022 | Must | Supabase config |
-| SRS-NFR-023 | Should | Status fields + logs §7.4 / §8.6 |
-| SRS-NFR-024 | Must | §6.1 / §13.1 5 MB |
-
-### 16.3 Use Cases → API
-
-| UC | Priority | Primary APIs |
-| --- | --- | --- |
-| UC-01 | Must | §4.1–4.2 |
-| UC-02 | Must | §4.3 |
-| UC-03 | Must | §5.1 |
-| UC-04 | Must | §6.2–6.3 |
-| UC-05 | Must | §8.2 + poll §7.4 / §5.7 |
-| UC-06 | Must | §7.5 |
-| UC-07 | Must | §7.2–7.3, §8.5 |
-| UC-08 | Must | §9.1 |
-| UC-09 | Must | §7.1–7.2 failure fields; §10 |
-| UC-10 | Should | §8.3 |
-
-Every public endpoint in §§4–9 traces to at least one FR/NFR/UC above.
+Every public endpoint in §§4–9 traces to at least one approved requirement above.
 
 ---
 
@@ -1280,9 +1075,9 @@ This API design operationalizes the approved stack and documents:
 | --- | --- |
 | Architecture | SPA → Supabase + async RPS; Gemini never in browser |
 | PRD | Jobs, uploads, ranking, analytics, human-in-the-loop |
-| SRS v1.1 | FR/NFR/UC coverage; ST-02 not adopted; explicit Start Screening |
-| SDD v1.1 | **202** async screening after explicit screen/retry; compensation on upload |
-| DDD v1.1 | Entities, statuses, views, defaults, path, PII, one open queue |
+| SRS v1.1 | FR/ST/EH coverage without new features |
+| SDD v1.1 | **202** async screening, polling, compensation |
+| DDD v1.1 | Entities, statuses, views, defaults, path, PII rules |
 
 It is the baseline for **UI/UX Design (RR-UIX-007)** and the **Cursor Developer Guide (RR-DEV-012)**.
 
@@ -1290,41 +1085,36 @@ It is the baseline for **UI/UX Design (RR-UIX-007)** and the **Cursor Developer 
 
 ## 19. API Architecture Review
 
-### 19.1 v1.0 Findings — Remediation Status (v1.1)
-
-| Issue (v1.0) | Severity | v1.1 Disposition | Section |
+| Issue | Severity | Recommendation | Affected Section |
 | --- | --- | --- | --- |
-| Upload dual path / auto-enqueue ambiguity | Critical | **Frozen** explicit screen workflow; no auto-enqueue | §6.0 |
-| ST-01 / `failed_ai` overlap | Critical | `/screen` = uploaded\|queued; `/retry` = failed_ai only | §8.0–8.3 |
-| Unnamed upload enqueue | Critical | Removed; queue only via `/screen` (and `/retry`) | §6.0, §8 |
-| Signed URL missing | Major | `GET /candidates/{id}/resume` | §6.5 |
-| Idempotency incomplete | Major | Required on `/screen` and `/retry`; replay rules | §8.8 |
-| Error normalization | Major | All vendor errors → ErrorObject | §10.1–10.2 |
-| Ranking model ambiguous | Major | Single ordered collection frozen | §7.5 |
-| Traceability FR-granularity | Major | Expanded FR + NFR + UC matrices | §16 |
-| Archive / update gates | Minor | Archived blocks update/upload/screen | §5.2–5.3, §6.1 |
-| Versioning clarity | Minor | Additive PostgREST; command `/v2` for breaks | §12 |
-| Keyset pagination | Minor | Documented as future optimization | §13.2 |
-| HTTP status mapping | Minor | 400 vs 422; 404 not masked; 202 scope | §10.5 |
+| Dual surface (PostgREST + RPS) may confuse clients | **Minor** | Document clearly in Developer Guide; SPA modules call correct surface | §3 |
+| Upload is multi-step composite, not single REST call | **Major** | Prefer documented orchestration or thin BFF in implementation; keep compensation rules | §6 |
+| PostgREST filter syntax vs pure REST aesthetics | **Minor** | Accept for Supabase; wrap in repository layer in SPA | §5–7 |
+| Optional `status_coarse` could drift from authoritative status | **Minor** | Derive only via mapping table; never accept as write input | §15.2 |
+| Idempotency-Key storage mechanism unspecified | **Major** | Implement key store (table or cache) during development; design requires header | §8.2, API-05 |
+| Rate-limit numeric thresholds not frozen | **Minor** | Set in deployment config; call out in RR-DEP-011 | §11, §13 |
+| Delete job 409 vs 400 semantics | **Minor** | Prefer **409 Conflict** with archive guidance | §5.4 |
+| Search Jobs is lightweight `ilike` only | **Observation** | Adequate for v1; not a search engine | §5.8 |
+| Internal queue claim must never be exposed | **Major** | Enforce network/IAM isolation in deployment | §8.6, API-02 |
+| Analytics views physical vs ad-hoc queries | **Minor** | Either satisfies contracts if shapes match §9 | §9 |
+| No OpenAPI artifact yet | **Observation** | Intentionally deferred; contracts in §15 sufficient for UI design | Doc control |
+| Missing explicit cancel-in-flight API | **Observation** | Correct — out of v1 (SDD) | §17 |
+| Evaluation history read endpoint lightly specified | **Minor** | Sufficient for audit UI; expand in UI/UX if needed | §8.5 |
 
-### 19.2 Remaining Implementation Notes
-
-| Issue | Severity | Recommendation | Section |
-| --- | --- | --- | --- |
-| Idempotency store physical design | Implementation | Table/cache + TTL in development | §8.8 |
-| Signed URL provider mechanics | Implementation | Supabase Storage signed URL API | §6.5 |
-| Error adapter placement (BFF vs SPA) | Implementation | Prefer shared client adapter or thin BFF | §10.1 |
-| Ranking view SQL | Implementation | Satisfy §7.5 ordering contract | §7.5 |
-
-### Review Verdict (v1.1)
+### Review Verdict
 
 | Dimension | Assessment |
 | --- | --- |
-| REST / hybrid | Command routes for async work; PostgREST for resources |
-| Async correctness | Explicit screen/retry only; upload is 201 |
-| Security | Signed resume + ownership; secrets off client |
-| Traceability | FR/NFR/UC matrices complete |
-| Freeze readiness | **Approved as implementation baseline** pending implementation notes above |
+| REST compliance | Adequate for SaaS+Supabase hybrid; RPS uses resourceful `/v1/jobs/...` |
+| Endpoint consistency | Naming aligned to jobs/candidates/evaluations/analytics |
+| Security | JWT + ownership + no client Gemini; PII rules referenced |
+| Versioning | v1 policy defined |
+| Error handling | Standard object + EH codes frozen |
+| Performance | Async 202, pagination, poll defaults |
+| Traceability | Matrix complete for public surface |
+| Missing endpoints | No Must gaps vs SRS; Could/Future deferred |
+
+**Approved as baseline for RR-UIX-007** after treating composite upload orchestration and Idempotency-Key persistence as implementation prerequisites.
 
 ---
 
@@ -1334,49 +1124,35 @@ It is the baseline for **UI/UX Design (RR-UIX-007)** and the **Cursor Developer 
 
 | ID | Decision | Reason | Alternative | Trade-off |
 | --- | --- | --- | --- | --- |
-| APD-01 | Async **202** only on `/screen` and `/retry` | Clear accept semantics | 202 on upload | Upload is sync persist |
-| APD-02 | No auto-enqueue (ST-02 not adopted) | Human-controlled screening | ST-02 UX optimize | Extra click |
-| APD-03 | Screen vs retry split | Non-overlapping eligibility | Single endpoint | Two routes |
-| APD-04 | Refined statuses in API (API-06) | DDD §4.4.1 | Coarse-only | More states in UI |
-| APD-05 | Idempotency-Key on async work | Safe retries | No keys | Need key store |
-| APD-06 | ErrorObject normalization | Stable SPA UX | Raw vendor errors | Adapter layer |
-| APD-07 | Single ranking collection | One contract | Split lists | Client sorts groups |
-| APD-08 | Signed resume endpoint | SRS private storage | Direct Storage SDK only | Extra route |
+| APD-01 | Async **202** only for screening | SDD v1.1 | Sync batch HTTP | UX non-blocking |
+| APD-02 | Refined statuses in API (API-06) | DDD §4.4.1 authority | Coarse-only API | Clients see more states |
+| APD-03 | Freeze 202 payload (API-01) | Close DDD open item | Defer to coding | Early contract stability |
+| APD-04 | Idempotency-Key on screen/retry (API-05) | Safe retries | No keys | Need key store |
+| APD-05 | Queue claim non-public (API-02) | Security | Public claim API | Ops isolation required |
+| APD-06 | Error object with EH codes (API-04) | SRS §18 | Ad-hoc errors | Consistent UX |
+| APD-07 | Analytics via named view routes | DDD §10.6 | Only ad-hoc aggregates | Clear UI contracts |
+| APD-08 | Hybrid PostgREST + RPS | Fit Supabase stack | Custom monolith API | Two call styles |
 
-### Appendix B — Closed Open Items (API-01..06)
+### Appendix B — Closed Open Items (from DDD Appendix B)
 
 | ID | Resolution |
 | --- | --- |
-| API-01 | §8.7 202 payload for screen/retry |
+| API-01 | §6.7 / §8.2 202 payload frozen |
 | API-02 | Queue claim internal only §8.6 |
-| API-03 | Poll §7.4 + progress views; interval §13.1 |
-| API-04 | ErrorObject §10.1 + source mapping §10.2 |
-| API-05 | Idempotency-Key §8.8 |
-| API-06 | Refined statuses primary; optional `status_coarse` |
+| API-03 | Poll candidates + progress/analytics views; interval §13.1 |
+| API-04 | Error object §10.1 |
+| API-05 | `Idempotency-Key` required on screen/retry |
+| API-06 | Primary refined statuses; optional `status_coarse` |
 
-### Appendix C — Change Log (v1.0.0 → v1.1.0)
-
-| ID | Change | Type |
-| --- | --- | --- |
-| CL-01 | Frozen upload → review → Start Screening → 202 workflow; removed auto-enqueue | Critical |
-| CL-02 | `/screen` = uploaded\|queued only; `/retry` = failed_ai only | Critical |
-| CL-03 | Removed unnamed upload enqueue; queue only via screen/retry | Critical |
-| CL-04 | Added `GET /candidates/{id}/resume` signed URL contract | Major |
-| CL-05 | Idempotency-Key + replay rules for async work | Major |
-| CL-06 | Normalize Auth/Storage/PostgREST/Gemini errors to ErrorObject | Major |
-| CL-07 | Frozen single ordered ranking response model | Major |
-| CL-08 | Expanded traceability to all FR, NFR, UC | Major |
-| CL-09 | Archive/update gates; versioning; keyset future; HTTP mapping; diagrams | Minor |
-
-### Appendix D — Document Control
+### Appendix C — Document Control
 
 | Item | Value |
 | --- | --- |
 | Path | `docs/02-design/06-API-Design-Specification.md` |
-| Version | 1.1.0 |
+| Version | 1.0.0 |
 | Upstream | RR-ARCH-001; RR-PRD-002; RR-SRS-003 v1.1.0; RR-SDD-004 v1.1.0; RR-DB-005 v1.1.0 |
 | Next | RR-UIX-007 UI/UX Design Document |
 
 ---
 
-**End of Document — Document 06 — RR-API-006 — API Design Specification v1.1.0**
+**End of Document — Document 06 — RR-API-006 — API Design Specification v1.0.0**
