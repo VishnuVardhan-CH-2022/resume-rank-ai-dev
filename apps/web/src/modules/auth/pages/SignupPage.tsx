@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,52 +10,46 @@ import {
   useAuth,
 } from "@/modules/auth/context/AuthProvider";
 import {
+  AUTH_PASSWORD_MIN_LENGTH,
   validateEmail,
-  validatePasswordRequired,
+  validatePasswordConfirm,
+  validatePasswordPolicy,
 } from "@/modules/auth/lib/validation";
 
-function nextPath(state: unknown, search: string): string {
-  const fromState =
-    state && typeof state === "object" && "next" in state
-      ? String((state as { next?: string }).next ?? "")
-      : "";
-  const fromQuery = new URLSearchParams(search).get("next") ?? "";
-  const candidate = fromState || fromQuery || "/dashboard";
-  if (!candidate.startsWith("/") || candidate.startsWith("//")) {
-    return "/dashboard";
-  }
-  return candidate;
-}
-
-/** UXD §6.1 / §8.1 Login */
-export function LoginPage() {
-  const { signIn, configured } = useAuth();
+/** UXD §6.2 / §8.1a Signup */
+export function SignupPage() {
+  const { signUp, configured } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
+    confirm?: string;
   }>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [holdingMessage, setHoldingMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+    setHoldingMessage(null);
 
     const emailErr = validateEmail(email);
-    const passwordErr = validatePasswordRequired(password);
+    const passwordErr = validatePasswordPolicy(password);
+    const confirmErr = validatePasswordConfirm(password, confirm);
     setFieldErrors({
       email: emailErr ?? undefined,
       password: passwordErr ?? undefined,
+      confirm: confirmErr ?? undefined,
     });
-    if (emailErr || passwordErr) return;
+    if (emailErr || passwordErr || confirmErr) return;
 
     setSubmitting(true);
-    const result = await signIn(email, password);
+    const result = await signUp(email, password);
     setSubmitting(false);
 
     if (!result.ok) {
@@ -63,13 +57,20 @@ export function LoginPage() {
       return;
     }
 
-    navigate(nextPath(location.state, location.search), { replace: true });
+    if (result.data.needsConfirm) {
+      setHoldingMessage(
+        "Account created. Check your email to confirm before signing in.",
+      );
+      return;
+    }
+
+    navigate("/dashboard", { replace: true });
   }
 
   return (
     <AuthCard
-      title="ResumeRank AI"
-      description="Sign in to access your HR screening workspace."
+      title="Create account"
+      description="Register to manage jobs and screen resumes."
     >
       {!configured ? (
         <Alert className="mb-4" variant="destructive">
@@ -85,6 +86,12 @@ export function LoginPage() {
       {formError ? (
         <Alert className="mb-4" variant="destructive">
           <AlertDescription>{formError}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {holdingMessage ? (
+        <Alert className="mb-4">
+          <AlertDescription>{holdingMessage}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -114,15 +121,35 @@ export function LoginPage() {
             id="password"
             name="password"
             type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
+            autoComplete="new-password"
             value={password}
             onChange={(ev) => setPassword(ev.target.value)}
             disabled={submitting || !configured}
             aria-invalid={Boolean(fieldErrors.password)}
           />
+          <p className="text-xs text-muted-foreground">
+            At least {AUTH_PASSWORD_MIN_LENGTH} characters, with letters and
+            digits.
+          </p>
           {fieldErrors.password ? (
             <p className="text-sm text-destructive">{fieldErrors.password}</p>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="confirm_password">Confirm password</Label>
+          <Input
+            id="confirm_password"
+            name="confirm_password"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(ev) => setConfirm(ev.target.value)}
+            disabled={submitting || !configured}
+            aria-invalid={Boolean(fieldErrors.confirm)}
+          />
+          {fieldErrors.confirm ? (
+            <p className="text-sm text-destructive">{fieldErrors.confirm}</p>
           ) : null}
         </div>
 
@@ -131,14 +158,14 @@ export function LoginPage() {
           className="w-full"
           disabled={submitting || !configured}
         >
-          {submitting ? "Signing in…" : "Sign in"}
+          {submitting ? "Creating account…" : "Create account"}
         </Button>
       </form>
 
       <p className="mt-4 text-center text-sm text-muted-foreground">
-        No account?{" "}
-        <Link to="/signup" className="text-primary underline-offset-4 hover:underline">
-          Create one
+        Already registered?{" "}
+        <Link to="/login" className="text-primary underline-offset-4 hover:underline">
+          Sign in
         </Link>
       </p>
     </AuthCard>

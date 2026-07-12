@@ -57,5 +57,6 @@ Documentation suite complete (RR-DOC-000 through RR-MBA-013).
 - Phase 1 — SPA scaffold under [`apps/web`](./apps/web)
 - Phase 2 — Supabase layout + browser client ([`supabase/`](./supabase))
 - Phase 3 — Database migrations, RLS, analytics views ([`supabase/migrations/`](./supabase/migrations))
+- Phase 4 — Authentication (login/signup/logout, route guards)
 
-Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md). Apply schema with `npx supabase db push` after `supabase link`.
+Follow [Cursor Developer Guide (RR-DEV-012)](./docs/04-delivery/12-Cursor-Developer-Guide.md).
