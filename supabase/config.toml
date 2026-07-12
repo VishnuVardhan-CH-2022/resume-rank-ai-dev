@@ -395,9 +395,10 @@ verify_jwt = true
 [functions.resume-url]
 verify_jwt = true
 
-# Phase 9 worker — not a public SPA route (ADS API-02).
+# Phase 9 worker — internal only; handler requires service-role Bearer.
+# Gateway JWT verify off so cron/manual invoke uses service_role key directly.
 [functions.process-queue]
-verify_jwt = true
+verify_jwt = false
 
 [analytics]
 enabled = true
