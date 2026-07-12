@@ -335,7 +335,7 @@ flowchart TD
 | **Dependencies** | RR-ARCH-001, RR-DEP-011 |
 | **When it should be created** | Phase 4, after Deployment Guide; before or at the start of intensive application coding |
 | **Used by development?** | **Yes** — primary day-to-day developer playbook |
-| **Status** | Not started |
+| **Status** | Complete (v1.0.0) |
 
 ---
 
