@@ -14,6 +14,7 @@ import {
 } from "@/modules/jobs/hooks/useJobs";
 import { parseJobDetailTab, type JobDetailTab } from "@/modules/jobs/types";
 import { UploadTabPanel } from "@/modules/uploads/components/UploadTabPanel";
+import { useScreenJob } from "@/modules/screening/hooks/useScreening";
 import { getSafeErrorMessage, type ErrorObject } from "@/lib/errors";
 
 const TAB_ITEMS: { id: JobDetailTab; label: string; query: string | null }[] = [
@@ -35,11 +36,13 @@ export function JobDetailPage() {
   const eligibleCount = useScreenEligibleCount(jobId);
   const archiveMutation = useArchiveJob();
   const deleteMutation = useDeleteJob();
+  const screenMutation = useScreenJob(jobId ?? "");
 
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [blockedDelete, setBlockedDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [screenAccepted, setScreenAccepted] = useState<number | null>(null);
 
   const job = jobQuery.data;
   const archived = job?.lifecycle_status === "archived";
@@ -53,10 +56,30 @@ export function JobDetailPage() {
     if (eligible === 0) {
       return "Upload resumes first. Start Screening is available when candidates are uploaded or queued.";
     }
-    return "Screening starts in a later phase (Edge Function).";
-  }, [job, archived, hasJd, eligible]);
+    if (screenMutation.isPending) return "Submitting screening request…";
+    return "Queue eligible resumes for async screening.";
+  }, [job, archived, hasJd, eligible, screenMutation.isPending]);
 
-  const screenDisabled = true; // Phase 6 shell only — wire in Phase 8
+  const screenDisabled =
+    !job ||
+    archived ||
+    !hasJd ||
+    eligible === 0 ||
+    screenMutation.isPending ||
+    !jobId;
+
+  async function onStartScreening() {
+    if (!jobId || screenDisabled) return;
+    setActionError(null);
+    setScreenAccepted(null);
+    try {
+      const data = await screenMutation.mutateAsync(undefined);
+      setScreenAccepted(data.accepted_candidate_ids.length);
+      setSearchParams({ tab: "progress" }, { replace: true });
+    } catch (err) {
+      setActionError(getSafeErrorMessage(err as ErrorObject));
+    }
+  }
 
   function setTab(next: JobDetailTab) {
     if (next === "overview") {
@@ -110,6 +133,13 @@ export function JobDetailPage() {
       ) : null}
       {jobQuery.error ? <ErrorBanner error={jobQuery.error} /> : null}
       {actionError ? <ErrorBanner error={actionError} /> : null}
+      {screenAccepted != null ? (
+        <p className="mb-4 text-sm text-muted-foreground" role="status">
+          Screening accepted for {screenAccepted} candidate
+          {screenAccepted === 1 ? "" : "s"}. Progress polling arrives in a later
+          phase; statuses will move to queued.
+        </p>
+      ) : null}
 
       {job ? (
         <>
@@ -159,8 +189,9 @@ export function JobDetailPage() {
               title={screenDisabledReason}
               aria-disabled={screenDisabled}
               aria-describedby="screen-disabled-reason"
+              onClick={() => void onStartScreening()}
             >
-              Start Screening
+              {screenMutation.isPending ? "Starting…" : "Start Screening"}
             </Button>
             <p
               id="screen-disabled-reason"
@@ -216,7 +247,7 @@ export function JobDetailPage() {
             {tab === "progress" ? (
               <EmptyTab
                 title="Screening progress"
-                body="Not started — upload resumes and Start Screening."
+                body="Candidates are queued after Start Screening. Live progress polling (PollingIndicator) lands with CP-23 after the AI worker."
               />
             ) : null}
 

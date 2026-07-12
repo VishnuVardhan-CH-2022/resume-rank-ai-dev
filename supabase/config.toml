@@ -385,6 +385,20 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Phase 8 command functions — JWT verified at gateway; handlers re-check ownership.
+[functions.screen-job]
+verify_jwt = true
+
+[functions.retry-candidate]
+verify_jwt = true
+
+[functions.resume-url]
+verify_jwt = true
+
+# Phase 9 worker — not a public SPA route (ADS API-02).
+[functions.process-queue]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

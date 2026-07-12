@@ -10,10 +10,11 @@ supabase/
 ├── migrations/          # Phase 3+ SQL (empty until CP-06)
 ├── seed/                # Optional demo seeds
 └── functions/           # Edge entrypoints (Phase 8–9)
-    ├── screen-job/
-    ├── retry-candidate/
-    ├── resume-url/
-    └── process-queue/
+    ├── _shared/         # JWT, idempotency, enqueue, ErrorObject
+    ├── screen-job/      # POST → 202 (uploaded|queued)
+    ├── retry-candidate/ # POST → 202 (failed_ai only)
+    ├── resume-url/      # GET → signed URL (default 300s)
+    └── process-queue/   # Phase 9 worker (not Phase 8)
 ```
 
 ## Auth defaults (local `config.toml`)
@@ -70,11 +71,37 @@ npm run test:errors
 
 With `.env` set, open `/login` — connection strip shows **configured** when public env is present. Full Auth UI is Phase 4.
 
+## Phase 8 Edge commands
+
+| Function | ADS | Notes |
+| --- | --- | --- |
+| `screen-job` | `POST /jobs/{job_id}/screen` | Body `{ job_id, candidate_ids? }` + `Idempotency-Key` → **202** |
+| `retry-candidate` | `POST /candidates/{id}/retry` | Body `{ candidate_id }` + `Idempotency-Key` → **202** |
+| `resume-url` | `GET /candidates/{id}/resume` | Query `candidate_id` → signed URL `expires_in` (default 300) |
+
+```bash
+# After secrets are set (never put service_role / Gemini in Vite):
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=... SIGNED_URL_EXPIRES_IN=300 IDEMPOTENCY_TTL_HOURS=24 --project-ref <ref>
+supabase functions deploy screen-job --project-ref <ref>
+supabase functions deploy retry-candidate --project-ref <ref>
+supabase functions deploy resume-url --project-ref <ref>
+```
+
+Self-check (no Docker required):
+
+```bash
+npx tsx supabase/functions/_shared/hashing.selftest.ts
+```
+
+`process-queue` remains a Phase 9 stub.
+
 ## Out of scope here
 
 - Schema / RLS / analytics views → Phase 3 (see [`migrations/README.md`](./migrations/README.md))  
 - Login/Signup screens + route guards → Phase 4  
-- Upload UI / Edge signed URLs → Phases 7–8  
+- Upload UI → Phase 7  
+- AI worker / Gemini → Phase 9  
+- Progress polling UI → CP-23  
 
 ## Phase 3–5 status
 
