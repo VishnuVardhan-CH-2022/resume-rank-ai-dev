@@ -265,7 +265,7 @@ flowchart TD
 | **Dependencies** | RR-ARCH-001, RR-SDD-004 |
 | **When it should be created** | Phase 3, after System Design (may start once SDD screening pipeline is stable) |
 | **Used by development?** | **Yes** — implements screening engine and prompt/response handling |
-| **Status** | Not started |
+| **Status** | Complete (v1.0.0) |
 
 ### 7.2 Security Design
 
