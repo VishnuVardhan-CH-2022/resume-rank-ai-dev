@@ -23,7 +23,7 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | 2 | 6 | API Design Specification | RR-API-006 | Complete (v1.1.0) | [06-API-Design-Specification.md](./02-design/06-API-Design-Specification.md) |
 | 2 | 7 | UI/UX Design Document | RR-UIX-007 | Complete (v1.1.0) | [07-UI-UX-Design-Document.md](./02-design/07-UI-UX-Design-Document.md) |
 | 3 | 8 | AI Design Document | RR-AI-008 | Complete (v1.0.0) | [08-AI-Design-Document.md](./03-specialty/08-AI-Design-Document.md) |
-| 3 | 9 | Security Design | RR-SEC-009 | Pending | — |
+| 3 | 9 | Security Design | RR-SEC-009 | Complete (v1.0.0) | [09-Security-Design.md](./03-specialty/09-Security-Design.md) |
 | 3 | 10 | Testing Document | RR-TEST-010 | Pending | — |
 | 4 | 11 | Deployment Guide | RR-DEP-011 | Pending | — |
 | 4 | 12 | Cursor Developer Guide | RR-DEV-012 | Pending | — |
