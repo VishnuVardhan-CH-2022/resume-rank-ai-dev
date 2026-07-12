@@ -190,7 +190,7 @@ flowchart TD
 | **Dependencies** | RR-ARCH-001, RR-SRS-003 |
 | **When it should be created** | Start of Phase 2, after SRS sign-off |
 | **Used by development?** | **Yes** — core implementation blueprint |
-| **Status** | Not started |
+| **Status** | Complete (v1.1.0) |
 
 ### 6.2 Database Design Document
 
@@ -204,7 +204,7 @@ flowchart TD
 | **Dependencies** | RR-ARCH-001, RR-SDD-004 |
 | **When it should be created** | Phase 2, after System Design |
 | **Used by development?** | **Yes** — schema, migrations, and RLS implementation |
-| **Status** | Not started |
+| **Status** | Complete (v1.0.0) |
 
 ### 6.3 API Design Specification
 
