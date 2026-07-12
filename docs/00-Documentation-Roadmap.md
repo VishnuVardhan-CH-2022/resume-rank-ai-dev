@@ -279,7 +279,7 @@ flowchart TD
 | **Dependencies** | RR-ARCH-001, RR-DB-005, RR-API-006 |
 | **When it should be created** | Phase 3, after Database and API designs |
 | **Used by development?** | **Yes** — RLS, env secrets, bucket policies, auth gates |
-| **Status** | Not started |
+| **Status** | Complete (v1.0.0) |
 
 ### 7.3 Testing Document
 
