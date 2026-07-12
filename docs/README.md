@@ -25,10 +25,10 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | 3 | 8 | AI Design Document | RR-AI-008 | Complete (v1.0.0) | [08-AI-Design-Document.md](./03-specialty/08-AI-Design-Document.md) |
 | 3 | 9 | Security Design | RR-SEC-009 | Complete (v1.0.0) | [09-Security-Design.md](./03-specialty/09-Security-Design.md) |
 | 3 | 10 | Testing Document | RR-TEST-010 | Complete (v1.0.0) | [10-Testing-Document.md](./03-specialty/10-Testing-Document.md) |
-| 4 | 11 | Deployment Guide | RR-DEP-011 | Pending | — |
+| 4 | 11 | Deployment Guide | RR-DEP-011 | Complete (v1.0.0) | [11-Deployment-Guide.md](./04-delivery/11-Deployment-Guide.md) |
 | 4 | 12 | Cursor Developer Guide | RR-DEV-012 | Pending | — |
 | 5 | 13 | Final MBA Report | RR-MBA-013 | Pending | — |
 
 ## Next Document
 
-**Deployment Guide (RR-DEP-011)** — after Testing Document acceptance.
+**Cursor Developer Guide (RR-DEV-012)** — after Deployment Guide acceptance.
