@@ -31,4 +31,4 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 
 ## Next Document
 
-**Security Design (RR-SEC-009)** — after AI Design acceptance.
+**Testing Document (RR-TEST-010)** — after Security Design acceptance.
