@@ -218,7 +218,7 @@ flowchart TD
 | **Dependencies** | RR-SDD-004, RR-DB-005 |
 | **When it should be created** | Phase 2, after Database Design |
 | **Used by development?** | **Yes** — frontend/backend integration contract |
-| **Status** | Complete (v1.0.0) |
+| **Status** | Complete (v1.1.0) |
 
 ### 6.4 UI/UX Design Document
 
@@ -232,7 +232,7 @@ flowchart TD
 | **Dependencies** | RR-PRD-002, RR-SDD-004 |
 | **When it should be created** | Phase 2, can proceed in parallel with API Design after System Design exists; finalize after PRD + SDD |
 | **Used by development?** | **Yes** — screen build order and UX acceptance |
-| **Status** | Not started |
+| **Status** | Complete (v1.1.0) |
 
 ---
 

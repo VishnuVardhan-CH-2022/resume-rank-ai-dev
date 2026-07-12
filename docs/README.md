@@ -20,8 +20,8 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 | 1 | 3 | Software Requirements Specification | RR-SRS-003 | Complete (v1.1.0) | [03-Software-Requirements-Specification.md](./01-requirements/03-Software-Requirements-Specification.md) |
 | 2 | 4 | System Design Document | RR-SDD-004 | Complete (v1.1.0) | [04-System-Design-Document.md](./02-design/04-System-Design-Document.md) |
 | 2 | 5 | Database Design Document | RR-DB-005 | Complete (v1.1.0) | [05-Database-Design-Document.md](./02-design/05-Database-Design-Document.md) |
-| 2 | 6 | API Design Specification | RR-API-006 | Complete (v1.0.0) | [06-API-Design-Specification.md](./02-design/06-API-Design-Specification.md) |
-| 2 | 7 | UI/UX Design Document | RR-UIX-007 | Pending | — |
+| 2 | 6 | API Design Specification | RR-API-006 | Complete (v1.1.0) | [06-API-Design-Specification.md](./02-design/06-API-Design-Specification.md) |
+| 2 | 7 | UI/UX Design Document | RR-UIX-007 | Complete (v1.1.0) | [07-UI-UX-Design-Document.md](./02-design/07-UI-UX-Design-Document.md) |
 | 3 | 8 | AI Design Document | RR-AI-008 | Pending | — |
 | 3 | 9 | Security Design | RR-SEC-009 | Pending | — |
 | 3 | 10 | Testing Document | RR-TEST-010 | Pending | — |
@@ -31,4 +31,4 @@ Every project document includes: Cover Page, Version History, Table of Contents,
 
 ## Next Document
 
-**UI/UX Design Document (RR-UIX-007)** — after API Design acceptance.
+**AI Design Document (RR-AI-008)** — after UI/UX Design acceptance.
