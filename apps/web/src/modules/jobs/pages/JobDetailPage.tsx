@@ -13,6 +13,7 @@ import {
   useScreenEligibleCount,
 } from "@/modules/jobs/hooks/useJobs";
 import { parseJobDetailTab, type JobDetailTab } from "@/modules/jobs/types";
+import { UploadTabPanel } from "@/modules/uploads/components/UploadTabPanel";
 import { getSafeErrorMessage, type ErrorObject } from "@/lib/errors";
 
 const TAB_ITEMS: { id: JobDetailTab; label: string; query: string | null }[] = [
@@ -209,14 +210,7 @@ export function JobDetailPage() {
             ) : null}
 
             {tab === "upload" ? (
-              <EmptyTab
-                title="Upload resumes"
-                body={
-                  archived
-                    ? "This job is archived. New uploads are blocked."
-                    : "Upload arrives in Phase 7. Use this tab once FileUpload is wired."
-                }
-              />
+              <UploadTabPanel jobId={job.id} archived={archived} />
             ) : null}
 
             {tab === "progress" ? (
