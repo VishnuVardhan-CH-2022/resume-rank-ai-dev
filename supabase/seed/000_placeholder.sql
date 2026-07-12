@@ -1,0 +1,1 @@
+-- ResumeRank AI seed placeholder (Phase 2). Demo fixtures land in later phases.
