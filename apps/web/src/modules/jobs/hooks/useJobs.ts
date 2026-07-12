@@ -9,6 +9,7 @@ import {
   listJobs,
   updateJob,
 } from "@/modules/jobs/api/jobs-api";
+import { analyticsKeys } from "@/modules/analytics/hooks/useAnalytics";
 import type {
   CreateJobInput,
   JobListFilter,
@@ -93,6 +94,7 @@ export function useCreateJob() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jobsKeys.all });
+      void qc.invalidateQueries({ queryKey: analyticsKeys.all });
     },
   });
 }
@@ -122,6 +124,7 @@ export function useArchiveJob() {
     },
     onSuccess: (job) => {
       void qc.invalidateQueries({ queryKey: jobsKeys.all });
+      void qc.invalidateQueries({ queryKey: analyticsKeys.all });
       qc.setQueryData(jobsKeys.detail(job.id), job);
     },
   });
@@ -137,6 +140,7 @@ export function useDeleteJob() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jobsKeys.all });
+      void qc.invalidateQueries({ queryKey: analyticsKeys.all });
     },
   });
 }

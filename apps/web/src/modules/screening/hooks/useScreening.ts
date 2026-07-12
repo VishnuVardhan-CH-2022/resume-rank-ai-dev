@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { screenJob, retryCandidate } from "@/modules/screening/api/screening-api";
+import { analyticsKeys } from "@/modules/analytics/hooks/useAnalytics";
 import { jobsKeys } from "@/modules/jobs/hooks/useJobs";
 import { uploadsKeys } from "@/modules/uploads/hooks/useUploads";
 import { rankingKeys } from "@/modules/ranking/hooks/useRanking";
@@ -18,6 +19,7 @@ export function useScreenJob(jobId: string) {
       void qc.invalidateQueries({ queryKey: jobsKeys.candidateCount(jobId) });
       void qc.invalidateQueries({ queryKey: uploadsKeys.candidates(jobId) });
       void qc.invalidateQueries({ queryKey: rankingKeys.all });
+      void qc.invalidateQueries({ queryKey: analyticsKeys.all });
     },
   });
 }
@@ -34,6 +36,7 @@ export function useRetryCandidate(jobId: string) {
       void qc.invalidateQueries({ queryKey: jobsKeys.screenEligible(jobId) });
       void qc.invalidateQueries({ queryKey: uploadsKeys.candidates(jobId) });
       void qc.invalidateQueries({ queryKey: rankingKeys.all });
+      void qc.invalidateQueries({ queryKey: analyticsKeys.all });
       void qc.invalidateQueries({
         queryKey: candidateKeys.detail(candidateId),
       });

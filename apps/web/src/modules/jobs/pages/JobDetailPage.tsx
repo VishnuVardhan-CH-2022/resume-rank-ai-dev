@@ -15,12 +15,12 @@ import {
 } from "@/modules/jobs/hooks/useJobs";
 import { parseJobDetailTab, type JobDetailTab } from "@/modules/jobs/types";
 import { UploadTabPanel } from "@/modules/uploads/components/UploadTabPanel";
+import { JobAnalyticsTabPanel } from "@/modules/analytics/components/JobAnalyticsTabPanel";
 import { ProgressTabPanel } from "@/modules/ranking/components/ProgressTabPanel";
 import { CandidatesTabPanel } from "@/modules/ranking/components/CandidatesTabPanel";
 import { useJobProgress } from "@/modules/ranking/hooks/useRanking";
 import { useScreenJob } from "@/modules/screening/hooks/useScreening";
 import { getSafeErrorMessage, type ErrorObject } from "@/lib/errors";
-import { EmptyState } from "@/components/domain/EmptyState";
 
 const TAB_ITEMS: { id: JobDetailTab; label: string; query: string | null }[] = [
   { id: "overview", label: "Overview", query: null },
@@ -271,10 +271,7 @@ export function JobDetailPage() {
             ) : null}
 
             {tab === "analytics" ? (
-              <EmptyState
-                title="Job analytics"
-                body="Job-scoped analytics charts land in Phase 11."
-              />
+              <JobAnalyticsTabPanel jobId={job.id} />
             ) : null}
           </div>
         </>
